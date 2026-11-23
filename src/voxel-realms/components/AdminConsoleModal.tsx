@@ -1,0 +1,2505 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import React, { useEffect, useState } from 'react';
+import {
+  X,
+  Shield,
+  Zap,
+  Terminal,
+  Clock,
+  Flame,
+  Crown,
+  Pause,
+  Play,
+  CloudRain,
+  UserCheck,
+  Mail,
+  Megaphone,
+  CheckCircle2,
+  AlertTriangle,
+  Copy,
+  Send,
+  Gavel,
+  Lock,
+  LogOut,
+  KeyRound,
+} from 'lucide-react';
+import { CharacterAppearance, CharacterSpeciesId, GameResources, TroopType } from '../types/game';
+import { WeatherType } from '../game/weather';
+import { sound } from '../game/audio';
+import { CHARACTER_SPECIES_CATALOG, getSpeciesSpec } from '../game/species';
+import {
+  TOP_100_OMNIVERSE_SPECIES_NPCS,
+  OMNIVERSE_CODEX_SPEC_VERSION,
+  SIX_LAYER_COSMIC_HIERARCHY,
+  OmniverseSpeciesNpcEntry,
+  OmniverseTierNumber,
+  WhitePageAuthorDecreeType,
+  executeOmniverseSuperAdminCommand,
+} from '../game/omniverse';
+import {
+  PRIMARY_ADMIN_EMAIL,
+  OFFICIAL_CONTACT_DIRECTORY,
+  ModeratedPlayerRecord,
+  ModerationActionType,
+  SecurityAuditEntry,
+  ServerSessionInfo,
+  SupportTicket,
+  ContactCategory,
+  verifyAccountPrivileges,
+  applyModerationAction,
+  createContactTicket,
+  resolveContactTicket,
+  buildMailtoHref,
+} from '../game/adminModeration';
+import { useAuth } from '../contexts/AuthContext';
+import { GoogleSignInButton } from './GoogleSignInButton';
+import { createSupportTicketDocument } from '../lib/firestore';
+import {
+  GOD_FLIGHT_SPEC,
+  GOD_IMMUNITY_DOMAIN_SPECS,
+  GOD_OMNI_ATTRIBUTES,
+  GOD_OMNI_PILLAR_SPECS,
+  GOD_TELEPORT_SPEC,
+  GodCharacterImmunityStatus,
+  GodFlightPermissionStatus,
+  GodOmniPillarId,
+  GodTeleportPermissionStatus,
+  GodTeleportWaypointId,
+  evaluateGodCharacterImmunity,
+  evaluateGodFlightPermission,
+  evaluateGodTeleportPermission,
+} from '../game/godModeCharacter';
+
+interface AdminConsoleModalProps {
+  godmode: boolean;
+  onToggleGodmode: () => void;
+  castleLevel: number;
+  onSetCastleLevel: (lvl: number) => void;
+  onGrantResources: (amount: Partial<GameResources>) => void;
+  onSpawnTroops: (type: TroopType, tier: number, amount: bigint) => void;
+  timeSpeedMultiplier: number;
+  onSetTimeSpeed: (speed: number) => void;
+  isTimeFrozen: boolean;
+  onToggleTimeFreeze: () => void;
+  onTriggerRivalRaid: () => void;
+  currentWeather?: WeatherType;
+  onSetWeather?: (w: WeatherType) => void;
+  activeAccountEmail?: string;
+  onChangeAccountEmail?: (email: string) => void;
+  moderatedPlayers?: ModeratedPlayerRecord[];
+  onUpdateModeratedPlayers?: (players: ModeratedPlayerRecord[]) => void;
+  supportTickets?: SupportTicket[];
+  onUpdateSupportTickets?: (tickets: SupportTicket[]) => void;
+  onBroadcastSystemMessage?: (message: string, tag: string) => void;
+  playerAppearance?: CharacterAppearance;
+  onUpdatePlayerAppearance?: (updated: CharacterAppearance) => void;
+  omniverseRoster?: OmniverseSpeciesNpcEntry[];
+  onExecuteOmniverseCommand?: (
+    command: Parameters<typeof executeOmniverseSuperAdminCommand>[0]['command']
+  ) => void;
+  onExecuteWhitePageDecree?: (decreeType: WhitePageAuthorDecreeType) => void;
+  onOpenOmniverseDirector?: () => void;
+  onOpenCosmologicalAdmin?: () => void;
+  godImmunity?: GodCharacterImmunityStatus;
+  onActivateMaxGodCharacter?: () => void;
+  flightPermission?: GodFlightPermissionStatus;
+  isFlying?: boolean;
+  flightAltitude?: number;
+  onToggleFlight?: () => void;
+  onSetFlightAltitude?: (altitude: number) => void;
+  teleportPermission?: GodTeleportPermissionStatus;
+  onTeleportToWaypoint?: (waypointId: GodTeleportWaypointId) => void;
+  onTeleportToCoordinates?: (x: number, y: number, z: number) => void;
+  onForwardBlink?: () => void;
+  initialTab?: 'cheats' | 'troops' | 'world' | 'moderation' | 'contact' | 'logs';
+  onClose: () => void;
+}
+
+export const AdminConsoleModal: React.FC<AdminConsoleModalProps> = ({
+  godmode,
+  onToggleGodmode,
+  castleLevel,
+  onSetCastleLevel,
+  onGrantResources,
+  onSpawnTroops,
+  timeSpeedMultiplier,
+  onSetTimeSpeed,
+  isTimeFrozen,
+  onToggleTimeFreeze,
+  onTriggerRivalRaid,
+  currentWeather = 'clear',
+  onSetWeather,
+  activeAccountEmail = PRIMARY_ADMIN_EMAIL,
+  onChangeAccountEmail,
+  moderatedPlayers = [],
+  onUpdateModeratedPlayers,
+  supportTickets = [],
+  onUpdateSupportTickets,
+  onBroadcastSystemMessage,
+  playerAppearance,
+  onUpdatePlayerAppearance,
+  omniverseRoster = TOP_100_OMNIVERSE_SPECIES_NPCS,
+  onExecuteOmniverseCommand,
+  onExecuteWhitePageDecree,
+  onOpenOmniverseDirector,
+  onOpenCosmologicalAdmin,
+  godImmunity,
+  onActivateMaxGodCharacter,
+  flightPermission,
+  isFlying = false,
+  flightAltitude = GOD_FLIGHT_SPEC.defaultCruiseAltitude,
+  onToggleFlight,
+  onSetFlightAltitude,
+  teleportPermission,
+  onTeleportToWaypoint,
+  onTeleportToCoordinates,
+  onForwardBlink,
+  initialTab = 'cheats',
+  onClose,
+}) => {
+  const [activeTab, setActiveTab] = useState<
+    'cheats' | 'troops' | 'world' | 'moderation' | 'contact' | 'logs'
+  >(initialTab);
+  const [consoleLogs, setConsoleLogs] = useState<string[]>([
+    '[SecurityBoundary] Checking HMAC-SHA256 server session on /api/auth/session...',
+    '[TrustModel] Client-side RBAC email checks are preview-only; /api/admin/* & /api/online/* require verified server sessions.',
+    `[WhitePage/HouseOfIdeas] Layer 6 Reference Authority: ${PRIMARY_ADMIN_EMAIL}.`,
+    '[Architect 17/11/2026] v1.5.0 Software & Hardware Architect (x86_64 AVX-512 / ARM64 SVE2 / Apple Silicon 128B UMA / RISC-V RVV 1.0 + SoA Lock-Free DAG): ONLINE.',
+  ]);
+
+  const {
+    user: firebaseUser,
+    serverSession: contextServerSession,
+    isSigningIn: isGoogleSigningIn,
+    signInWithGoogle,
+    logout: signOutGoogle,
+    getFreshIdToken,
+    refreshServerSession,
+  } = useAuth();
+
+  // Account & server authentication state
+  const [emailInput, setEmailInput] = useState<string>(activeAccountEmail);
+  const [operatorPasskeyInput, setOperatorPasskeyInput] = useState<string>('');
+  const [serverSession, setServerSession] = useState<ServerSessionInfo | null>(
+    contextServerSession
+  );
+  const [serverAuditLog, setServerAuditLog] = useState<SecurityAuditEntry[]>([]);
+  const [serverAuthFeedback, setServerAuthFeedback] = useState<{
+    type: 'success' | 'error' | 'info';
+    text: string;
+  } | null>(null);
+  const [isAuthBusy, setIsAuthBusy] = useState<boolean>(false);
+
+  const [moderationReason, setModerationReason] = useState<string>(
+    'Code of Conduct & Realm Fair-Play Enforcement'
+  );
+  const [broadcastInput, setBroadcastInput] = useState<string>('');
+  const [selectedOmniPillar, setSelectedOmniPillar] = useState<'all' | GodOmniPillarId>('all');
+  const [teleportXInput, setTeleportXInput] = useState<string>('0');
+  const [teleportYInput, setTeleportYInput] = useState<string>('24.0');
+  const [teleportZInput, setTeleportZInput] = useState<string>('0');
+
+  // Official Contact & Ticket form state
+  const [ticketCategory, setTicketCategory] = useState<ContactCategory>('administration');
+  const [ticketSubject, setTicketSubject] = useState<string>('');
+  const [ticketMessage, setTicketMessage] = useState<string>('');
+  const [ticketPriority, setTicketPriority] = useState<'low' | 'normal' | 'high' | 'critical'>(
+    'high'
+  );
+  const [ticketFormFeedback, setTicketFormFeedback] = useState<{
+    type: 'success' | 'error';
+    text: string;
+  } | null>(null);
+  const [copiedEmailBadge, setCopiedEmailBadge] = useState<boolean>(false);
+
+  const clientPreviewProfile = verifyAccountPrivileges(
+    activeAccountEmail,
+    moderatedPlayers,
+    'UNTRUSTED_CLIENT_PREVIEW'
+  );
+
+  // Authoritative view prefers server-verified session when present; otherwise marks UI as client sandbox preview
+  const isServerStaffVerified = Boolean(serverSession?.permissions?.canAccessGmConsole);
+  const privilegeProfile =
+    isServerStaffVerified && serverSession
+      ? verifyAccountPrivileges(serverSession.email, moderatedPlayers, 'VERIFIED_SERVER_SESSION')
+      : clientPreviewProfile;
+
+  const addLog = (msg: string) => {
+    setConsoleLogs((prev) => [`[${new Date().toLocaleTimeString()}] ${msg}`, ...prev.slice(0, 30)]);
+  };
+
+  const refreshServerSessionAndAdminState = async () => {
+    try {
+      const res = await fetch('/api/auth/session', { credentials: 'same-origin' });
+      if (!res.ok) return;
+      const data = (await res.json()) as {
+        authenticated: boolean;
+        session: ServerSessionInfo | null;
+      };
+      setServerSession(data.session);
+      if (data.session?.permissions?.canAccessGmConsole) {
+        const adminRes = await fetch('/api/admin/state', { credentials: 'same-origin' });
+        if (adminRes.ok) {
+          const adminData = (await adminRes.json()) as {
+            roster?: ModeratedPlayerRecord[];
+            tickets?: SupportTicket[];
+            auditLog?: SecurityAuditEntry[];
+          };
+          if (adminData.roster) onUpdateModeratedPlayers?.(adminData.roster);
+          if (adminData.tickets) onUpdateSupportTickets?.(adminData.tickets);
+          if (adminData.auditLog) setServerAuditLog(adminData.auditLog);
+        }
+        addLog(
+          `[SERVER SESSION VERIFIED] Authenticated as ${data.session.email} (Role: ${data.session.role} · Clearance Lv.${data.session.clearanceLevel}).`
+        );
+      } else {
+        addLog(
+          '[UNAUTHENTICATED PREVIEW] No verified server operator session active — server /api/admin/* endpoints fail closed with HTTP 401/403.'
+        );
+      }
+    } catch {
+      addLog(
+        '[OFFLINE SANDBOX] Server auth endpoint unreachable; operating in local client sandbox preview.'
+      );
+    }
+  };
+
+  useEffect(() => {
+    void refreshServerSessionAndAdminState();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (contextServerSession) {
+      setServerSession(contextServerSession);
+      setEmailInput(contextServerSession.email);
+      if (contextServerSession.permissions?.canAccessGmConsole) {
+        void refreshServerSessionAndAdminState();
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contextServerSession]);
+
+  useEffect(() => {
+    setEmailInput(activeAccountEmail);
+  }, [activeAccountEmail]);
+
+  const handleServerOperatorLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsAuthBusy(true);
+    setServerAuthFeedback(null);
+    try {
+      const res = await fetch('/api/auth/admin-login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({
+          email: emailInput.trim(),
+          passkey: operatorPasskeyInput,
+        }),
+      });
+      const data = (await res.json()) as {
+        ok?: boolean;
+        error?: string;
+        session?: ServerSessionInfo;
+      };
+      if (!res.ok || !data.ok || !data.session) {
+        const errMsg = `HTTP ${res.status}: ${data.error || 'Server operator authentication failed.'}`;
+        setServerAuthFeedback({ type: 'error', text: errMsg });
+        addLog(`[AUTH REJECTED] ${errMsg}`);
+        return;
+      }
+      setOperatorPasskeyInput('');
+      setServerSession(data.session);
+      onChangeAccountEmail?.(data.session.email);
+      setServerAuthFeedback({
+        type: 'success',
+        text: `Verified HMAC-SHA256 HttpOnly session active for ${data.session.email} (Clearance Lv.${data.session.clearanceLevel}).`,
+      });
+      sound.playUpgradeFanfare();
+      await refreshServerSessionAndAdminState();
+    } catch {
+      setServerAuthFeedback({
+        type: 'error',
+        text: 'Network error reaching /api/auth/admin-login.',
+      });
+    } finally {
+      setIsAuthBusy(false);
+    }
+  };
+
+  const handleGoogleOperatorSignIn = async () => {
+    setIsAuthBusy(true);
+    setServerAuthFeedback(null);
+    try {
+      const signedIn = await signInWithGoogle();
+      if (!signedIn) {
+        setServerAuthFeedback({
+          type: 'error',
+          text: 'Google sign-in was cancelled or blocked. Allow popups or try again.',
+        });
+        return;
+      }
+      const nextSession = await refreshServerSession();
+      if (nextSession) {
+        setServerSession(nextSession);
+        onChangeAccountEmail?.(nextSession.email);
+        setEmailInput(nextSession.email);
+        setServerAuthFeedback({
+          type: nextSession.permissions?.canAccessGmConsole ? 'success' : 'info',
+          text: nextSession.permissions?.canAccessGmConsole
+            ? `Verified Google + HMAC-SHA256 session active for ${nextSession.email} (Clearance Lv.${nextSession.clearanceLevel}).`
+            : `Signed in via Google as ${nextSession.email} (Player Clearance Lv.${nextSession.clearanceLevel}). Staff clearance is reserved for authorized operators.`,
+        });
+        sound.playUpgradeFanfare();
+        await refreshServerSessionAndAdminState();
+      }
+    } finally {
+      setIsAuthBusy(false);
+    }
+  };
+
+  const handleServerLogout = async () => {
+    setIsAuthBusy(true);
+    try {
+      if (firebaseUser) {
+        await signOutGoogle();
+      } else {
+        await fetch('/api/auth/logout', {
+          method: 'POST',
+          credentials: 'same-origin',
+        });
+      }
+      setServerSession(null);
+      setServerAuditLog([]);
+      setEmailInput('guest@voxelrealms.example');
+      onChangeAccountEmail?.('guest@voxelrealms.example');
+      setServerAuthFeedback({
+        type: 'info',
+        text: 'Signed out of verified server session. Server /api/admin/* now rejects requests (401).',
+      });
+      addLog('[SERVER LOGOUT] Signed out of verified operator session.');
+    } finally {
+      setIsAuthBusy(false);
+    }
+  };
+
+  const handleCopyAdminEmail = () => {
+    if (typeof navigator !== 'undefined' && navigator.clipboard) {
+      navigator.clipboard.writeText(PRIMARY_ADMIN_EMAIL).catch(() => {});
+    }
+    setCopiedEmailBadge(true);
+    addLog(
+      `INFO: Copied official Admin/GM/Moderator contact (${PRIMARY_ADMIN_EMAIL}) to clipboard.`
+    );
+    setTimeout(() => setCopiedEmailBadge(false), 2500);
+  };
+
+  const handleSwitchAccountEmail = (targetEmail: string) => {
+    const cleaned = targetEmail.trim() || 'guest@voxelrealms.example';
+    setEmailInput(cleaned);
+    onChangeAccountEmail?.(cleaned);
+    const preview = verifyAccountPrivileges(cleaned, moderatedPlayers, 'UNTRUSTED_CLIENT_PREVIEW');
+    addLog(
+      `[CLIENT PREVIEW ONLY] UI preview email set to ${preview.email} (Roles: ${preview.assignedRoles.join(', ')}). Does NOT elevate server /api/admin/* authority without Verified Sign-In.`
+    );
+  };
+
+  const handleMaxCastle = () => {
+    if (!privilegeProfile.permissions.canUseGodmodeAndCheats) {
+      addLog(`DENIED: ${privilegeProfile.email} lacks GM cheat privileges.`);
+      return;
+    }
+    onSetCastleLevel(100);
+    sound.playUpgradeFanfare();
+    addLog(
+      'CMD [CLIENT SANDBOX]: Local single-player Castle level set to 100 (untrusted by multiplayer server unless verified GM).'
+    );
+  };
+
+  const handleGrantSupplies = () => {
+    if (!privilegeProfile.permissions.canSpawnTroopsAndResources) {
+      addLog(`DENIED: ${privilegeProfile.email} lacks GM resource grant privileges.`);
+      return;
+    }
+    onGrantResources({
+      wood: 100_000_000n,
+      steel: 100_000_000n,
+      copper: 100_000_000n,
+      grain: 100_000_000n,
+      oil: 100_000_000n,
+      diamond: 1_000_000n,
+    });
+    sound.playGather();
+    addLog(
+      'CMD [CLIENT SANDBOX]: Granted +100M Wood/Steel/Copper/Grain/Oil & +1M Diamonds to local React state.'
+    );
+  };
+
+  const handleSpawnT20Troops = (type: TroopType, amount: bigint) => {
+    if (!privilegeProfile.permissions.canSpawnTroopsAndResources) {
+      addLog(`DENIED: ${privilegeProfile.email} lacks GM troop spawner privileges.`);
+      return;
+    }
+    onSpawnTroops(type, 20, amount);
+    sound.playSwing();
+    addLog(
+      `CMD [CLIENT SANDBOX]: Spawned +${amount.toLocaleString()} T20 ${type.toUpperCase()} cohort into local garrison.`
+    );
+  };
+
+  const handleExecuteModeration = async (targetPlayerId: string, action: ModerationActionType) => {
+    try {
+      const res = await fetch('/api/admin/moderation', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({
+          targetPlayerId,
+          action,
+          reason: moderationReason,
+        }),
+      });
+      const data = (await res.json()) as {
+        ok?: boolean;
+        error?: string;
+        logMessage?: string;
+        roster?: ModeratedPlayerRecord[];
+        auditLog?: SecurityAuditEntry[];
+      };
+
+      if (!res.ok || !data.ok) {
+        const deniedMsg = `SERVER ENFORCED HTTP ${res.status}: ${data.error || 'Moderation action rejected.'}`;
+        addLog(deniedMsg);
+        setServerAuthFeedback({ type: 'error', text: deniedMsg });
+        return;
+      }
+
+      if (data.roster) onUpdateModeratedPlayers?.(data.roster);
+      if (data.auditLog) setServerAuditLog(data.auditLog);
+      if (data.logMessage) {
+        addLog(`[SERVER VERIFIED] ${data.logMessage}`);
+        onBroadcastSystemMessage?.(data.logMessage, 'MODERATION');
+      }
+      sound.playSwing();
+    } catch {
+      // Offline fallback clearly marked as local sandbox only
+      const fallback = applyModerationAction({
+        roster: moderatedPlayers,
+        targetPlayerId,
+        action,
+        reason: moderationReason,
+        actorEmail: privilegeProfile.email,
+      });
+      addLog(`[OFFLINE SANDBOX] ${fallback.logMessage}`);
+      if (fallback.success) {
+        sound.playSwing();
+        onUpdateModeratedPlayers?.(fallback.updatedRoster);
+      }
+    }
+  };
+
+  const handleSendBroadcast = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmed = broadcastInput.trim();
+    if (!trimmed) return;
+    try {
+      const res = await fetch('/api/admin/decree', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ message: trimmed }),
+      });
+      const data = (await res.json()) as {
+        ok?: boolean;
+        error?: string;
+        auditLog?: SecurityAuditEntry[];
+      };
+      if (!res.ok || !data.ok) {
+        const deniedMsg = `SERVER ENFORCED HTTP ${res.status}: ${data.error || 'Broadcast rejected.'}`;
+        addLog(deniedMsg);
+        setServerAuthFeedback({ type: 'error', text: deniedMsg });
+        return;
+      }
+      if (data.auditLog) setServerAuditLog(data.auditLog);
+      const formatted = `[${serverSession?.email || privilegeProfile.email} · VERIFIED GM DECREE]: ${trimmed}`;
+      onBroadcastSystemMessage?.(formatted, 'GM DECREE');
+      addLog(`BROADCAST [SERVER VERIFIED]: ${formatted}`);
+      setBroadcastInput('');
+      sound.playUpgradeFanfare();
+    } catch {
+      addLog('ERROR: Failed to reach /api/admin/decree.');
+    }
+  };
+
+  const handleSubmitContactTicket = async (e: React.FormEvent) => {
+    e.preventDefault();
+    let cloudTicketId: string | null = null;
+    try {
+      if (firebaseUser) {
+        cloudTicketId = await createSupportTicketDocument(firebaseUser, {
+          category: ticketCategory,
+          subject: ticketSubject,
+          message: ticketMessage,
+        });
+        const idToken = await getFreshIdToken();
+        if (idToken) {
+          await fetch('/api/db/tickets', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${idToken}`,
+            },
+            body: JSON.stringify({
+              category: ticketCategory,
+              subject: ticketSubject,
+              message: ticketMessage,
+            }),
+          }).catch(() => {});
+        }
+      }
+
+      const res = await fetch('/api/admin/tickets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({
+          category: ticketCategory,
+          subject: ticketSubject,
+          message: ticketMessage,
+          priority: ticketPriority,
+        }),
+      });
+      const data = (await res.json()) as {
+        ok?: boolean;
+        error?: string;
+        ticket?: SupportTicket;
+        tickets?: SupportTicket[];
+      };
+
+      if (res.ok && data.ok && data.ticket) {
+        if (data.tickets) onUpdateSupportTickets?.(data.tickets);
+        setTicketSubject('');
+        setTicketMessage('');
+        setTicketFormFeedback({
+          type: 'success',
+          text: cloudTicketId
+            ? `Ticket ${data.ticket.id} synced to Cloud & server, routed to ${PRIMARY_ADMIN_EMAIL}.`
+            : `Ticket ${data.ticket.id} persisted on server & routed to ${PRIMARY_ADMIN_EMAIL}.`,
+        });
+        addLog(
+          `[SERVER TICKET] Ticket ${data.ticket.id} ("${data.ticket.subject}") persisted and assigned to ${PRIMARY_ADMIN_EMAIL}.`
+        );
+        sound.playGather();
+        return;
+      }
+
+      if (cloudTicketId) {
+        setTicketSubject('');
+        setTicketMessage('');
+        setTicketFormFeedback({
+          type: 'success',
+          text: `Ticket ${cloudTicketId} saved to your verified Google cloud account & routed to ${PRIMARY_ADMIN_EMAIL}.`,
+        });
+        sound.playGather();
+        return;
+      }
+
+      setTicketFormFeedback({
+        type: 'error',
+        text:
+          res.status === 401
+            ? 'Please sign in with Google or authenticate a session to submit a verified support ticket (HTTP 401).'
+            : data.error || 'Please provide both a subject and message.',
+      });
+    } catch (err) {
+      if (firebaseUser) {
+        setTicketFormFeedback({
+          type: 'error',
+          text:
+            err instanceof Error
+              ? err.message
+              : 'Unable to submit support ticket. Please check your connection.',
+        });
+        return;
+      }
+      const result = createContactTicket({
+        tickets: supportTickets,
+        category: ticketCategory,
+        senderName: privilegeProfile.displayName,
+        senderEmail: privilegeProfile.email,
+        subject: ticketSubject,
+        message: ticketMessage,
+        priority: ticketPriority,
+      });
+      if (!result.success || !result.ticket) {
+        setTicketFormFeedback({
+          type: 'error',
+          text: result.error || 'Please provide both a subject and message.',
+        });
+        return;
+      }
+      onUpdateSupportTickets?.(result.updatedTickets);
+      setTicketSubject('');
+      setTicketMessage('');
+      setTicketFormFeedback({
+        type: 'success',
+        text: `[Offline Preview] Ticket ${result.ticket.id} staged locally.`,
+      });
+    }
+  };
+
+  const handleTicketStatusUpdate = async (
+    ticketId: string,
+    status: 'investigating' | 'resolved',
+    note: string
+  ) => {
+    try {
+      const res = await fetch('/api/admin/tickets/resolve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ ticketId, status, resolutionNote: note }),
+      });
+      const data = (await res.json()) as {
+        ok?: boolean;
+        error?: string;
+        logMessage?: string;
+        tickets?: SupportTicket[];
+        auditLog?: SecurityAuditEntry[];
+      };
+      if (!res.ok || !data.ok) {
+        const deniedMsg = `SERVER ENFORCED HTTP ${res.status}: ${data.error || 'Ticket update rejected.'}`;
+        addLog(deniedMsg);
+        setServerAuthFeedback({ type: 'error', text: deniedMsg });
+        return;
+      }
+      if (data.tickets) onUpdateSupportTickets?.(data.tickets);
+      if (data.auditLog) setServerAuditLog(data.auditLog);
+      if (data.logMessage) addLog(`[SERVER VERIFIED] ${data.logMessage}`);
+      sound.playSwing();
+    } catch {
+      const result = resolveContactTicket({
+        tickets: supportTickets,
+        ticketId,
+        status,
+        resolutionNote: note,
+        actorEmail: privilegeProfile.email,
+        roster: moderatedPlayers,
+      });
+      addLog(`[OFFLINE SANDBOX] ${result.logMessage}`);
+      if (result.success) {
+        sound.playSwing();
+        onUpdateSupportTickets?.(result.updatedTickets);
+      }
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-xs animate-in fade-in duration-200">
+      <div
+        data-testid="admin-console-modal"
+        className="relative w-full max-w-5xl bg-slate-900 border-2 border-red-500/60 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]"
+      >
+        {/* Header with Root Account & Contact Identity */}
+        <div className="relative px-4 sm:px-6 py-3.5 bg-gradient-to-r from-red-950 via-slate-900 to-amber-950 border-b border-red-500/40 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0 flex-1">
+            <div className="px-2.5 py-1 rounded-lg bg-red-600 text-white font-mono font-black text-xs tracking-wider border border-red-400 shrink-0">
+              GM / ADMIN / MOD
+            </div>
+            <div className="min-w-0 flex-1">
+              <h2 className="text-sm sm:text-base font-bold font-mono text-white flex flex-wrap items-center gap-2">
+                <span className="truncate">Administration, GM & Moderator Control Center</span>
+                <span className="text-[10px] px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 font-mono border border-amber-500/40 shrink-0">
+                  Root Contact: {PRIMARY_ADMIN_EMAIL}
+                </span>
+              </h2>
+              <p className="text-[11px] text-slate-300 font-mono truncate">
+                {isServerStaffVerified
+                  ? 'Verified Server Session: '
+                  : 'Client Preview (Unverified): '}
+                <span
+                  className={`font-bold ${isServerStaffVerified ? 'text-emerald-300' : 'text-amber-300'}`}
+                  data-testid="admin-active-email"
+                >
+                  {privilegeProfile.email}
+                </span>{' '}
+                ·{' '}
+                {isServerStaffVerified
+                  ? `Server Clearance Lv.${privilegeProfile.clearanceLevel} · Roles: ${privilegeProfile.assignedRoles.join(' / ')}`
+                  : 'Server Clearance: Locked (Sign In Below for /api/admin/* Authority)'}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={handleCopyAdminEmail}
+              data-testid="copy-admin-email-btn"
+              className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-amber-500/40 text-[11px] font-mono font-bold text-amber-300 flex items-center gap-1.5 transition-colors cursor-pointer"
+              title="Copy Official Admin / GM / Moderator Email"
+            >
+              <Copy className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">
+                {copiedEmailBadge ? 'Copied!' : PRIMARY_ADMIN_EMAIL}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+              aria-label="Close GM Console"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+
+        {/* Server-Side Trust Boundary & Operator Authentication Bar */}
+        <div
+          data-testid="server-auth-status-bar"
+          className="px-4 sm:px-6 py-2.5 bg-slate-950 border-b border-slate-800 space-y-2 text-xs"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-1.5">
+              {isServerStaffVerified && serverSession ? (
+                <span
+                  data-testid="server-session-verified-badge"
+                  className="px-2.5 py-0.5 rounded-md bg-emerald-500/20 border border-emerald-400/50 text-emerald-300 font-mono font-bold text-[10px] flex items-center gap-1"
+                >
+                  <Shield className="w-3 h-3" />
+                  <span>
+                    VERIFIED SERVER SESSION (HMAC-SHA256 · Lv.{serverSession.clearanceLevel})
+                  </span>
+                </span>
+              ) : (
+                <span
+                  data-testid="server-session-unverified-badge"
+                  className="px-2.5 py-0.5 rounded-md bg-amber-500/20 border border-amber-400/50 text-amber-200 font-mono font-bold text-[10px] flex items-center gap-1"
+                >
+                  <Lock className="w-3 h-3" />
+                  <span>
+                    UNAUTHENTICATED CLIENT PREVIEW · /api/admin/* Enforces Fail-Closed 401/403
+                  </span>
+                </span>
+              )}
+              {privilegeProfile.assignedRoles.map((roleName) => (
+                <span
+                  key={roleName}
+                  className="px-2 py-0.5 rounded-md bg-red-500/20 border border-red-500/40 text-red-200 font-mono font-bold text-[10px]"
+                >
+                  {roleName}
+                </span>
+              ))}
+            </div>
+
+            {isServerStaffVerified && (
+              <button
+                type="button"
+                data-testid="server-logout-btn"
+                disabled={isAuthBusy}
+                onClick={handleServerLogout}
+                className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-200 font-mono font-bold text-[11px] flex items-center gap-1 cursor-pointer"
+              >
+                <LogOut className="w-3 h-3" />
+                <span>Sign Out Server Session</span>
+              </button>
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            {/* Local Client Preview Switcher (Explicitly non-authoritative) */}
+            <div className="flex items-center gap-1.5">
+              <label htmlFor="admin-account-email-input" className="sr-only">
+                Operator or Preview Email
+              </label>
+              <input
+                id="admin-account-email-input"
+                data-testid="admin-account-email-input"
+                type="email"
+                value={emailInput}
+                onChange={(e) => setEmailInput(e.target.value)}
+                placeholder="Operator email..."
+                className="px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-700 text-xs font-mono text-white focus:outline-none focus:border-amber-400 w-44 sm:w-52"
+              />
+              <button
+                type="button"
+                data-testid="verify-account-email-btn"
+                onClick={() => handleSwitchAccountEmail(emailInput)}
+                className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-200 font-mono font-bold text-[11px] cursor-pointer"
+                title="Sets local single-player UI preview only (does NOT authenticate server APIs)"
+              >
+                Preview Email
+              </button>
+              <button
+                type="button"
+                data-testid="bind-root-admin-email-btn"
+                onClick={() => handleSwitchAccountEmail(PRIMARY_ADMIN_EMAIL)}
+                className="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/35 border border-amber-400/50 text-amber-200 font-mono font-bold text-[11px] cursor-pointer"
+                title={`Bind active session to ${PRIMARY_ADMIN_EMAIL}`}
+              >
+                Bind {PRIMARY_ADMIN_EMAIL}
+              </button>
+            </div>
+
+            {/* Real Server & Google Authentication -> /api/auth/firebase-exchange or /api/auth/admin-login */}
+            {!isServerStaffVerified && (
+              <div className="flex flex-wrap items-center gap-2">
+                {firebaseUser ? (
+                  <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900 border border-cyan-500/40 text-[11px] font-mono text-cyan-200">
+                    <span>Google: {firebaseUser.email}</span>
+                    <button
+                      type="button"
+                      onClick={handleServerLogout}
+                      disabled={isAuthBusy}
+                      className="text-rose-300 hover:text-rose-200 underline ml-1 cursor-pointer"
+                    >
+                      Sign out
+                    </button>
+                  </div>
+                ) : (
+                  <GoogleSignInButton
+                    onClick={handleGoogleOperatorSignIn}
+                    disabled={isAuthBusy || isGoogleSigningIn}
+                    label={isGoogleSigningIn ? 'Signing in...' : 'Sign in with Google'}
+                  />
+                )}
+                <form
+                  onSubmit={handleServerOperatorLogin}
+                  className="flex flex-wrap items-center gap-1.5"
+                >
+                  <label htmlFor="admin-operator-passkey-input" className="sr-only">
+                    Server Operator Passkey
+                  </label>
+                  <input
+                    id="admin-operator-passkey-input"
+                    data-testid="admin-operator-passkey-input"
+                    type="password"
+                    value={operatorPasskeyInput}
+                    onChange={(e) => setOperatorPasskeyInput(e.target.value)}
+                    placeholder="Server VOXEL_ADMIN_PASSKEY..."
+                    className="px-2.5 py-1 rounded-lg bg-slate-900 border border-cyan-500/40 text-xs font-mono text-white focus:outline-none focus:border-cyan-400 w-44 sm:w-48"
+                  />
+                  <button
+                    type="submit"
+                    data-testid="server-operator-login-btn"
+                    disabled={isAuthBusy}
+                    className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-mono font-bold text-[11px] flex items-center gap-1 cursor-pointer"
+                  >
+                    <KeyRound className="w-3 h-3" />
+                    <span>Authenticate Server</span>
+                  </button>
+                </form>
+              </div>
+            )}
+          </div>
+
+          {serverAuthFeedback && (
+            <div
+              data-testid="server-auth-feedback"
+              className={`px-2.5 py-1.5 rounded-lg font-mono text-[11px] border ${
+                serverAuthFeedback.type === 'success'
+                  ? 'bg-emerald-950/70 border-emerald-500/40 text-emerald-200'
+                  : serverAuthFeedback.type === 'error'
+                    ? 'bg-rose-950/70 border-rose-500/40 text-rose-200'
+                    : 'bg-slate-900 border-slate-700 text-slate-300'
+              }`}
+            >
+              {serverAuthFeedback.text}
+            </div>
+          )}
+        </div>
+
+        {/* Tab Strip */}
+        <div className="flex flex-wrap border-b border-slate-800 bg-slate-950/80 px-4 sm:px-6 gap-1 pt-2">
+          {[
+            { id: 'cheats', label: 'Godmode & Cheats', icon: Zap },
+            { id: 'troops', label: 'T20 Spawner', icon: Shield },
+            { id: 'world', label: 'World & Time', icon: Clock },
+            { id: 'moderation', label: 'Admin & Moderator Control', icon: Gavel },
+            { id: 'contact', label: 'Official Contact & Tickets', icon: Mail },
+            { id: 'logs', label: 'Audit Logs', icon: Terminal },
+          ].map((t) => {
+            const Icon = t.icon;
+            const active = activeTab === t.id;
+            return (
+              <button
+                key={t.id}
+                type="button"
+                data-testid={`admin-tab-${t.id}`}
+                onClick={() => {
+                  setActiveTab(t.id as typeof activeTab);
+                  sound.playSwing();
+                }}
+                className={`px-3 py-2 text-[11px] font-mono font-bold rounded-t-xl flex items-center gap-1.5 border-t-2 transition-all cursor-pointer whitespace-nowrap ${
+                  active
+                    ? 'bg-slate-900 border-red-500 text-red-200'
+                    : 'border-transparent text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Icon className="w-3.5 h-3.5" />
+                <span>{t.label}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Content Body */}
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 text-slate-200">
+          {activeTab === 'cheats' && (
+            <div className="space-y-4">
+              {/* Root Owner Summary Banner */}
+              <div className="p-4 rounded-xl bg-gradient-to-r from-red-950/60 via-slate-900 to-amber-950/60 border border-amber-500/40 flex flex-wrap items-center justify-between gap-3">
+                <div className="space-y-1">
+                  <div className="text-xs font-mono uppercase tracking-wider text-amber-400 font-bold flex items-center gap-1.5">
+                    <UserCheck className="w-4 h-4 text-emerald-400" />
+                    Authorized Supreme Administrator / GM / Moderator Account
+                  </div>
+                  <div className="text-sm font-bold text-white font-mono">
+                    {PRIMARY_ADMIN_EMAIL} — Full Administration, Game Master, Admin, Moderator &
+                    Official Contact Authority
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('moderation')}
+                    className="px-3 py-1.5 rounded-lg bg-red-600/90 hover:bg-red-500 text-white text-xs font-mono font-bold cursor-pointer"
+                  >
+                    Open Moderator Panel →
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('contact')}
+                    className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-mono font-bold cursor-pointer"
+                  >
+                    Official Contact Hub →
+                  </button>
+                </div>
+              </div>
+
+              {/* Supreme Creator Maxed-Out God Character & All-Things Immunity */}
+              {(() => {
+                const resolvedImmunity =
+                  godImmunity ?? evaluateGodCharacterImmunity(activeAccountEmail, godmode);
+                return (
+                  <div
+                    data-testid="god-sovereign-immunity-panel"
+                    className="p-4 rounded-xl bg-gradient-to-br from-amber-950/55 via-slate-900 to-purple-950/55 border border-amber-400/50 space-y-3"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="space-y-0.5">
+                        <div className="text-xs font-mono font-bold text-amber-300 uppercase tracking-wider flex items-center gap-1.5">
+                          <Crown className="w-4 h-4 text-amber-400" />
+                          <span>
+                            Supreme Creator God Character &amp; All-Things Immunity (
+                            {PRIMARY_ADMIN_EMAIL})
+                          </span>
+                        </div>
+                        <div className="text-xs text-slate-300">
+                          {resolvedImmunity.label} · Castle Lv.100 · Ultimate Origin Realm 23 L9 ·
+                          1,000T T20 Army · VIP 3 Loyalty Lv.15 · Divine Lv.999 Heroes
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        data-testid="activate-max-god-character-btn"
+                        onClick={() => {
+                          sound.playUpgradeFanfare();
+                          onActivateMaxGodCharacter?.();
+                          addLog(
+                            `GOD CHARACTER MAXED: Applied Lv.100 / Realm 23 L9 / 1,000T T20 / VIP 3 / 12-Domain All-Things Immunity for ${PRIMARY_ADMIN_EMAIL}.`
+                          );
+                        }}
+                        className="px-4 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs font-mono font-black shadow-lg shadow-amber-500/25 active:scale-95 cursor-pointer"
+                      >
+                        MAX-OUT GOD CHARACTER &amp; IMMUNITY
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                      {GOD_IMMUNITY_DOMAIN_SPECS.map((spec) => {
+                        const isDomainActive = resolvedImmunity.activeImmunities.includes(spec.id);
+                        return (
+                          <div
+                            key={spec.id}
+                            className={`p-2 rounded-lg border text-[11px] ${
+                              isDomainActive
+                                ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-100'
+                                : 'bg-slate-950/70 border-slate-800 text-slate-400'
+                            }`}
+                          >
+                            <div className="font-mono font-bold flex items-start justify-between gap-2">
+                              <span className="leading-tight">{spec.title}</span>
+                              <span
+                                className={
+                                  isDomainActive
+                                    ? 'text-emerald-300 shrink-0'
+                                    : 'text-slate-500 shrink-0'
+                                }
+                              >
+                                {isDomainActive ? 'IMMUNE' : 'INACTIVE'}
+                              </span>
+                            </div>
+                            <div className="text-[10px] text-slate-400 mt-0.5 leading-snug">
+                              {spec.description}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* 100 Supreme Omni-Attributes Codex (5 Divine Pillars × 20 Attributes) */}
+                    <div
+                      data-testid="god-omni-attributes-codex"
+                      className="pt-3 border-t border-amber-500/30 space-y-2.5"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <div className="text-xs font-mono font-bold text-amber-200 uppercase tracking-wider">
+                            100 Supreme Omni-Attributes Codex (5 Divine Pillars × 20 Attributes)
+                          </div>
+                          <div className="text-[11px] text-slate-300">
+                            Active Omni-Attributes:{' '}
+                            <span className="font-mono font-bold text-emerald-300">
+                              {resolvedImmunity.activeOmniAttributesCount} /{' '}
+                              {GOD_OMNI_ATTRIBUTES.length}
+                            </span>{' '}
+                            across{' '}
+                            <span className="font-mono font-bold text-amber-300">
+                              {resolvedImmunity.activeOmniPillarsCount} /{' '}
+                              {GOD_OMNI_PILLAR_SPECS.length}
+                            </span>{' '}
+                            Divine Pillars (Fail-Closed for {PRIMARY_ADMIN_EMAIL})
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap gap-1">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedOmniPillar('all')}
+                            className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold cursor-pointer transition-colors ${
+                              selectedOmniPillar === 'all'
+                                ? 'bg-amber-400 text-slate-950'
+                                : 'bg-slate-900/90 border border-slate-700 text-slate-300 hover:bg-slate-800'
+                            }`}
+                          >
+                            All ({GOD_OMNI_ATTRIBUTES.length})
+                          </button>
+                          {GOD_OMNI_PILLAR_SPECS.map((pillar) => (
+                            <button
+                              key={pillar.id}
+                              type="button"
+                              onClick={() => setSelectedOmniPillar(pillar.id)}
+                              className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold cursor-pointer transition-colors ${
+                                selectedOmniPillar === pillar.id
+                                  ? 'bg-amber-400 text-slate-950'
+                                  : 'bg-slate-900/90 border border-slate-700 text-slate-300 hover:bg-slate-800'
+                              }`}
+                            >
+                              {pillar.shortLabel} ({pillar.attributeCount})
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="max-h-56 overflow-y-auto pr-1 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-1.5">
+                        {GOD_OMNI_ATTRIBUTES.filter(
+                          (attr) =>
+                            selectedOmniPillar === 'all' || attr.pillar === selectedOmniPillar
+                        ).map((attr) => {
+                          const isOmniActive = resolvedImmunity.immuneToAllThings;
+                          return (
+                            <div
+                              key={attr.id}
+                              className={`p-2 rounded-lg border text-[10px] ${
+                                isOmniActive
+                                  ? 'bg-amber-950/35 border-amber-500/35 text-amber-100'
+                                  : 'bg-slate-950/70 border-slate-800 text-slate-400'
+                              }`}
+                            >
+                              <div className="font-mono font-bold flex items-center justify-between gap-1">
+                                <span className="text-amber-300">{attr.name}</span>
+                                <span
+                                  className={
+                                    isOmniActive
+                                      ? 'text-emerald-300 text-[9px] shrink-0'
+                                      : 'text-slate-500 text-[9px] shrink-0'
+                                  }
+                                >
+                                  {isOmniActive ? 'OMNI-ACTIVE' : 'LOCKED'}
+                                </span>
+                              </div>
+                              <div className="text-[9.5px] text-slate-300 mt-0.5 leading-snug">
+                                {attr.description}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Sovereign Divine Flight Controller (creatergame31@gmail.com) */}
+                    {(() => {
+                      const resolvedFlight =
+                        flightPermission ??
+                        evaluateGodFlightPermission(activeAccountEmail, godmode);
+                      return (
+                        <div
+                          data-testid="admin-god-flight-panel"
+                          className="pt-3 border-t border-amber-500/30 space-y-2.5"
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div className="space-y-0.5">
+                              <div className="text-xs font-mono font-bold text-emerald-300 uppercase tracking-wider flex items-center gap-1.5">
+                                <span>🕊️</span>
+                                <span>
+                                  Sovereign Divine Flight &amp; 3D Imperial Flying Sword (
+                                  {PRIMARY_ADMIN_EMAIL})
+                                </span>
+                              </div>
+                              <div className="text-[11px] text-slate-300">
+                                {resolvedFlight.mountTitle} ·{' '}
+                                <span className="font-mono font-bold text-amber-300">
+                                  {resolvedFlight.flightSpeedMultiplier}x Speed
+                                </span>{' '}
+                                ·{' '}
+                                <span className="font-mono font-bold text-cyan-300">
+                                  Altitude:{' '}
+                                  {isFlying && resolvedFlight.allowed
+                                    ? `${flightAltitude.toFixed(1)}m (Airborne)`
+                                    : '0.0m (Grounded)'}
+                                </span>{' '}
+                                · Linked Omni-Attributes:{' '}
+                                <span className="font-mono text-emerald-300">
+                                  {GOD_FLIGHT_SPEC.linkedOmniAttributeIds.join(' · ')}
+                                </span>
+                              </div>
+                            </div>
+
+                            <button
+                              type="button"
+                              data-testid="admin-toggle-flight-btn"
+                              disabled={!resolvedFlight.allowed}
+                              onClick={() => {
+                                sound.playSwing();
+                                onToggleFlight?.();
+                                addLog(
+                                  `CMD [SOVEREIGN FLIGHT]: Toggled Divine Flight ${!isFlying ? 'AIRBORNE' : 'GROUNDED'} for ${PRIMARY_ADMIN_EMAIL}.`
+                                );
+                              }}
+                              className={`px-4 py-2 rounded-xl text-xs font-mono font-black transition-all cursor-pointer ${
+                                !resolvedFlight.allowed
+                                  ? 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed'
+                                  : isFlying
+                                    ? 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-lg shadow-emerald-500/25'
+                                    : 'bg-cyan-500 hover:bg-cyan-400 text-slate-950 shadow-lg shadow-cyan-500/25'
+                              }`}
+                            >
+                              {!resolvedFlight.allowed
+                                ? 'LOCKED (ROOT CREATOR ONLY)'
+                                : isFlying
+                                  ? `🕊️ FLYING (${flightAltitude.toFixed(1)}m) · CLICK TO LAND`
+                                  : '🕊️ LAUNCH SOVEREIGN FLIGHT [F]'}
+                            </button>
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="text-[10px] font-mono text-slate-400 mr-1">
+                              Altitude Presets (E/Space Ascend · Q/Shift Descend):
+                            </span>
+                            {GOD_FLIGHT_SPEC.altitudePresets.map((preset) => (
+                              <button
+                                key={preset.id}
+                                type="button"
+                                data-testid={`admin-flight-preset-${preset.id}`}
+                                disabled={!resolvedFlight.allowed}
+                                onClick={() => {
+                                  sound.playSwing();
+                                  onSetFlightAltitude?.(preset.altitude);
+                                  addLog(
+                                    `CMD [SOVEREIGN FLIGHT]: Set target altitude to ${preset.label} for ${PRIMARY_ADMIN_EMAIL}.`
+                                  );
+                                }}
+                                className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold transition-colors cursor-pointer border ${
+                                  !resolvedFlight.allowed
+                                    ? 'bg-slate-900 border-slate-800 text-slate-600 cursor-not-allowed'
+                                    : isFlying && Math.abs(flightAltitude - preset.altitude) < 1.2
+                                      ? 'bg-emerald-500/25 border-emerald-400 text-emerald-200'
+                                      : 'bg-slate-900 hover:bg-slate-800 border-slate-700 text-slate-200'
+                                }`}
+                              >
+                                {preset.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    {/* Sovereign Divine Teleportation Controller (creatergame31@gmail.com) */}
+                    {(() => {
+                      const resolvedTeleport =
+                        teleportPermission ??
+                        evaluateGodTeleportPermission(activeAccountEmail, godmode);
+                      return (
+                        <div
+                          data-testid="admin-god-teleport-panel"
+                          className="pt-3 border-t border-cyan-500/30 space-y-2.5"
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div className="space-y-0.5">
+                              <div className="text-xs font-mono font-bold text-cyan-300 uppercase tracking-wider flex items-center gap-1.5">
+                                <span>⚡</span>
+                                <span>
+                                  Sovereign Divine Teleportation &amp; Spatial Rift Matrix (
+                                  {PRIMARY_ADMIN_EMAIL})
+                                </span>
+                              </div>
+                              <div className="text-[11px] text-slate-300">
+                                {resolvedTeleport.abilityTitle} ·{' '}
+                                <span className="font-mono font-bold text-amber-300">
+                                  0ms Cooldown
+                                </span>{' '}
+                                ·{' '}
+                                <span className="font-mono font-bold text-cyan-300">
+                                  +{resolvedTeleport.forwardBlinkMeters}m Forward Blink [T]
+                                </span>{' '}
+                                · <span className="font-mono text-emerald-300">Shift + Click</span>{' '}
+                                3D Scene · Linked Omni-Attributes:{' '}
+                                <span className="font-mono text-cyan-200">
+                                  {GOD_TELEPORT_SPEC.linkedOmniAttributeIds.join(' · ')}
+                                </span>
+                              </div>
+                            </div>
+
+                            <button
+                              type="button"
+                              data-testid="admin-teleport-blink-btn"
+                              disabled={!resolvedTeleport.allowed}
+                              onClick={() => {
+                                sound.playSwing();
+                                onForwardBlink?.();
+                                addLog(
+                                  `CMD [SOVEREIGN TELEPORT]: Executed +${resolvedTeleport.forwardBlinkMeters}m Forward Astral Blink for ${PRIMARY_ADMIN_EMAIL}.`
+                                );
+                              }}
+                              className={`px-4 py-2 rounded-xl text-xs font-mono font-black transition-all cursor-pointer ${
+                                !resolvedTeleport.allowed
+                                  ? 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed'
+                                  : 'bg-cyan-500 hover:bg-cyan-400 text-slate-950 shadow-lg shadow-cyan-500/25'
+                              }`}
+                            >
+                              {!resolvedTeleport.allowed
+                                ? 'LOCKED (ROOT CREATOR ONLY)'
+                                : `⚡ FORWARD ASTRAL BLINK (+${resolvedTeleport.forwardBlinkMeters}m) [T]`}
+                            </button>
+                          </div>
+
+                          {/* 8 Sovereign Waypoints */}
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                            {GOD_TELEPORT_SPEC.waypoints.map((wp) => (
+                              <button
+                                key={wp.id}
+                                type="button"
+                                data-testid={`admin-teleport-wp-${wp.id}`}
+                                disabled={!resolvedTeleport.allowed}
+                                onClick={() => {
+                                  sound.playSwing();
+                                  onTeleportToWaypoint?.(wp.id);
+                                  addLog(
+                                    `CMD [SOVEREIGN TELEPORT]: Teleported to ${wp.label} (${wp.x}, ${wp.y}, ${wp.z}) for ${PRIMARY_ADMIN_EMAIL}.`
+                                  );
+                                }}
+                                className={`p-2 rounded-xl text-left transition-colors cursor-pointer border ${
+                                  !resolvedTeleport.allowed
+                                    ? 'bg-slate-900 border-slate-800 text-slate-600 cursor-not-allowed'
+                                    : 'bg-slate-900/90 hover:bg-cyan-950/60 border-cyan-500/35 hover:border-cyan-400 text-slate-100'
+                                }`}
+                              >
+                                <div className="text-[11px] font-bold truncate">
+                                  {wp.icon} {wp.label}
+                                </div>
+                                <div className="text-[9.5px] font-mono text-cyan-300 mt-0.5">
+                                  ({wp.x}m, {wp.y}m, {wp.z}m)
+                                </div>
+                              </button>
+                            ))}
+                          </div>
+
+                          {/* Custom (X, Y, Z) Coordinate Warp */}
+                          <div className="flex flex-wrap items-center gap-2 pt-1">
+                            <span className="text-[10px] font-mono text-slate-400">
+                              Custom Spatial Coordinates (X, Y, Z):
+                            </span>
+                            <input
+                              type="number"
+                              data-testid="admin-teleport-x-input"
+                              value={teleportXInput}
+                              onChange={(e) => setTeleportXInput(e.target.value)}
+                              className="w-20 px-2 py-1 rounded-lg bg-slate-900 border border-slate-700 text-xs font-mono text-white"
+                              placeholder="X"
+                            />
+                            <input
+                              type="number"
+                              data-testid="admin-teleport-y-input"
+                              value={teleportYInput}
+                              onChange={(e) => setTeleportYInput(e.target.value)}
+                              className="w-20 px-2 py-1 rounded-lg bg-slate-900 border border-slate-700 text-xs font-mono text-white"
+                              placeholder="Y"
+                            />
+                            <input
+                              type="number"
+                              data-testid="admin-teleport-z-input"
+                              value={teleportZInput}
+                              onChange={(e) => setTeleportZInput(e.target.value)}
+                              className="w-20 px-2 py-1 rounded-lg bg-slate-900 border border-slate-700 text-xs font-mono text-white"
+                              placeholder="Z"
+                            />
+                            <button
+                              type="button"
+                              data-testid="admin-teleport-coords-btn"
+                              disabled={!resolvedTeleport.allowed}
+                              onClick={() => {
+                                sound.playSwing();
+                                const x = Number(teleportXInput) || 0;
+                                const y = Number(teleportYInput) || 0;
+                                const z = Number(teleportZInput) || 0;
+                                onTeleportToCoordinates?.(x, y, z);
+                                addLog(
+                                  `CMD [SOVEREIGN TELEPORT]: Warped to custom coordinates (${x}, ${y}, ${z}) for ${PRIMARY_ADMIN_EMAIL}.`
+                                );
+                              }}
+                              className={`px-3 py-1 rounded-lg text-[11px] font-mono font-bold transition-colors cursor-pointer ${
+                                !resolvedTeleport.allowed
+                                  ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                                  : 'bg-amber-500 hover:bg-amber-400 text-slate-950'
+                              }`}
+                            >
+                              ⚡ WARP TO (X, Y, Z)
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                );
+              })()}
+
+              {/* Godmode & Instant Castle */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="p-4 rounded-xl bg-slate-800/60 border border-slate-700 flex items-center justify-between">
+                  <div>
+                    <div className="text-sm font-bold text-white flex items-center gap-2">
+                      <Shield className="w-4 h-4 text-red-400" />
+                      Godmode (Invulnerability)
+                    </div>
+                    <div className="text-xs text-slate-400 mt-0.5">
+                      Zero casualties, 0x realm suppression, tribulation &amp; status immunity.
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    data-testid="toggle-godmode-btn"
+                    onClick={() => {
+                      onToggleGodmode();
+                      sound.playSwing();
+                      addLog(`CMD: Godmode toggled ${!godmode ? 'ENABLED' : 'DISABLED'}.`);
+                    }}
+                    className={`px-4 py-2 rounded-xl text-xs font-mono font-bold transition-all cursor-pointer ${
+                      godmode
+                        ? 'bg-red-600 text-white shadow-lg shadow-red-600/30'
+                        : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                    }`}
+                  >
+                    {godmode ? 'ENABLED' : 'DISABLED'}
+                  </button>
+                </div>
+
+                <div className="p-4 rounded-xl bg-slate-800/60 border border-slate-700 flex items-center justify-between">
+                  <div>
+                    <div className="text-sm font-bold text-white flex items-center gap-2">
+                      <Crown className="w-4 h-4 text-amber-400" />
+                      Instant Max Castle (Lv.100)
+                    </div>
+                    <div className="text-xs text-slate-400 mt-0.5">
+                      Unlocks Era X: Celestial Imperium & 1,000 Trillion troop cap.
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleMaxCastle}
+                    className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-mono font-bold shadow-lg shadow-amber-500/20 active:scale-95 cursor-pointer"
+                  >
+                    SET LEVEL 100
+                  </button>
+                </div>
+              </div>
+
+              {/* Instant Resources & Supplies */}
+              <div className="p-4 rounded-xl bg-slate-800/60 border border-slate-700 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-bold text-white">Infinite Kingdom Treasury</h3>
+                    <p className="text-xs text-slate-400">
+                      Grant +100 Million of Wood, Steel, Copper, Grain, Oil and +1M Diamonds.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleGrantSupplies}
+                    className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-mono font-bold shadow-md shadow-emerald-600/25 active:scale-95 cursor-pointer"
+                  >
+                    +100M ALL SUPPLIES
+                  </button>
+                </div>
+              </div>
+
+              {/* Castle Level Slider */}
+              <div className="p-4 rounded-xl bg-slate-800/60 border border-slate-700 space-y-2">
+                <div className="flex justify-between items-center text-xs">
+                  <span className="font-bold text-slate-300">Castle Level Set:</span>
+                  <span className="font-mono text-amber-400 font-bold">
+                    Level {castleLevel} / 100
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={castleLevel}
+                  aria-label="Castle Level Slider"
+                  onChange={(e) => {
+                    const l = parseInt(e.target.value);
+                    onSetCastleLevel(l);
+                    addLog(`CMD: Castle Level slider adjusted to ${l}.`);
+                  }}
+                  className="w-full accent-amber-400"
+                />
+              </div>
+
+              {/* Admin Species / Race Rebirth Authorization Control (creatergame31@gmail.com) */}
+              {playerAppearance && onUpdatePlayerAppearance && (
+                <div
+                  data-testid="admin-species-authorization-card"
+                  className="p-4 rounded-xl bg-slate-900/90 border border-cyan-500/40 space-y-3"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <h3 className="text-sm font-bold text-cyan-200 flex items-center gap-2">
+                        <span>Species / Race Rebirth Governance ({PRIMARY_ADMIN_EMAIL})</span>
+                        <span className="text-[10px] px-2 py-0.5 rounded bg-cyan-500/20 border border-cyan-400/40 text-cyan-300 font-mono">
+                          {getSpeciesSpec(playerAppearance.species).icon}{' '}
+                          {getSpeciesSpec(playerAppearance.species).name}
+                        </span>
+                      </h3>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        Grant or revoke Admin ({PRIMARY_ADMIN_EMAIL}) Permission for choosing and
+                        switching across all {CHARACTER_SPECIES_CATALOG.length} Playable Races (10
+                        Core Lineages + 90 Sovereign Omniverse Races #1–#100), or force-assign any
+                        race directly.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      data-testid="admin-toggle-species-permission-btn"
+                      onClick={() => {
+                        const nextApproved = !playerAppearance.adminSpeciesSwitchApproved;
+                        onUpdatePlayerAppearance({
+                          ...playerAppearance,
+                          adminSpeciesSwitchApproved: nextApproved,
+                        });
+                        sound.playUpgradeFanfare();
+                        addLog(
+                          `[SPECIES GOVERNANCE] ${PRIMARY_ADMIN_EMAIL} set Admin 100-Race Switch Permission = ${nextApproved ? 'APPROVED' : 'REVOKED'}.`
+                        );
+                      }}
+                      className={`px-3.5 py-2 rounded-xl text-xs font-mono font-bold border transition-all cursor-pointer ${
+                        playerAppearance.adminSpeciesSwitchApproved
+                          ? 'bg-emerald-600 text-white border-emerald-400'
+                          : 'bg-amber-500/20 text-amber-200 border-amber-400 hover:bg-amber-500/30'
+                      }`}
+                    >
+                      {playerAppearance.adminSpeciesSwitchApproved
+                        ? '✓ 100-Race Admin Permission: APPROVED'
+                        : 'Grant 100-Race Admin Permission'}
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5 pt-1 max-h-52 overflow-y-auto pr-1">
+                    {CHARACTER_SPECIES_CATALOG.map((spec) => {
+                      const active = (playerAppearance.species || 'human') === spec.id;
+                      return (
+                        <button
+                          key={spec.id}
+                          type="button"
+                          onClick={() => {
+                            onUpdatePlayerAppearance({
+                              ...playerAppearance,
+                              species: spec.id as CharacterSpeciesId,
+                              speciesLocked: true,
+                              adminSpeciesSwitchApproved: true,
+                            });
+                            sound.playButton();
+                            addLog(
+                              `[SPECIES OVERRIDE] ${PRIMARY_ADMIN_EMAIL} assigned Lord Species -> ${spec.name} (${spec.chineseName}).`
+                            );
+                          }}
+                          className={`px-2 py-1.5 rounded-lg border text-[10px] font-mono font-bold flex items-center gap-1.5 truncate cursor-pointer ${
+                            active
+                              ? 'bg-cyan-500/25 border-cyan-400 text-cyan-200'
+                              : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
+                          }`}
+                        >
+                          <span>{spec.icon}</span>
+                          <span className="truncate">
+                            #{spec.omniverseRank} {spec.name.split(' (')[0]}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Super Admin Infinite Omniverse & 100 Species Background NPCs Control (creatergame31@gmail.com) */}
+              <div
+                data-testid="admin-omniverse-100-npc-card"
+                className="p-4 rounded-xl bg-gradient-to-r from-fuchsia-950/60 via-slate-900 to-amber-950/40 border border-fuchsia-500/40 space-y-3"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="text-sm font-bold text-fuchsia-200">
+                        🌌 Infinite Omniverse & 100 Fictional Species Background NPCs
+                      </h3>
+                      <span className="text-[10px] px-2 py-0.5 rounded bg-amber-500/20 border border-amber-400/50 text-amber-300 font-mono font-bold">
+                        SUPER ADMIN: {PRIMARY_ADMIN_EMAIL}
+                      </span>
+                      <span className="text-[10px] px-2 py-0.5 rounded bg-cyan-500/20 border border-cyan-400/40 text-cyan-200 font-mono">
+                        📜 {OMNIVERSE_CODEX_SPEC_VERSION}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-300 mt-0.5">
+                      Command all 100 Species Background NPCs (Outer Gods, Beyonders, Endless,
+                      Monitors, Xeelee, Time Lords, Fiendcelestials, Saiyans, Kryptonians, Eldar,
+                      etc.) and their 100+∞ Sovereign Omniverses. Currently Projected in 3D
+                      Overworld:{' '}
+                      <strong className="text-emerald-300 font-mono">
+                        {omniverseRoster.filter((e) => e.deployedInOverworld).length} / 100
+                      </strong>
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {onOpenCosmologicalAdmin && (
+                      <button
+                        type="button"
+                        data-testid="admin-open-cosmological-d3-btn"
+                        onClick={() => {
+                          sound.playButton();
+                          onOpenCosmologicalAdmin();
+                        }}
+                        className="px-3 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 text-xs font-mono font-bold cursor-pointer"
+                      >
+                        Open 6-Tier Cosmology D3 Tree
+                      </button>
+                    )}
+                    {onOpenOmniverseDirector && (
+                      <button
+                        type="button"
+                        data-testid="admin-open-omniverse-matrix-btn"
+                        onClick={() => {
+                          sound.playButton();
+                          onOpenOmniverseDirector();
+                        }}
+                        className="px-3 py-2 rounded-xl bg-fuchsia-600 hover:bg-fuchsia-500 text-white text-xs font-mono font-bold cursor-pointer"
+                      >
+                        Open Full 100-Omniverse Matrix
+                      </button>
+                    )}
+                    {onExecuteOmniverseCommand && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onExecuteOmniverseCommand({ type: 'harvest_all_omniverse_tribute' });
+                          sound.playUpgradeFanfare();
+                          addLog(
+                            `[OMNIVERSE TRIBUTE] ${PRIMARY_ADMIN_EMAIL} harvested cosmic tribute across all 100 Sovereign Omniverses.`
+                          );
+                        }}
+                        className="px-3 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-mono font-bold cursor-pointer"
+                      >
+                        Harvest 100-Omniverse Tribute
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {onExecuteOmniverseCommand && (
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5 pt-1">
+                    {([1, 2, 3, 4, 5] as OmniverseTierNumber[]).map((t) => {
+                      const tierEntries = omniverseRoster.filter((e) => e.tier === t);
+                      const deployedCount = tierEntries.filter((e) => e.deployedInOverworld).length;
+                      const allDeployed = deployedCount === tierEntries.length;
+                      return (
+                        <button
+                          key={t}
+                          type="button"
+                          onClick={() => {
+                            onExecuteOmniverseCommand({
+                              type: 'project_tier_to_overworld',
+                              targetTier: t,
+                              deploy: !allDeployed,
+                            });
+                            sound.playButton();
+                            addLog(
+                              `[OMNIVERSE TIER ${t}] ${PRIMARY_ADMIN_EMAIL} ${!allDeployed ? 'projected' : 'recalled'} all 20 Tier ${t} Background NPCs.`
+                            );
+                          }}
+                          className={`px-2.5 py-1.5 rounded-lg border text-[10px] font-mono font-bold flex items-center justify-between cursor-pointer ${
+                            deployedCount > 0
+                              ? 'bg-fuchsia-500/20 border-fuchsia-400 text-fuchsia-200'
+                              : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
+                          }`}
+                        >
+                          <span>Tier {t} NPCs</span>
+                          <span>{deployedCount}/20</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* 6-Layer Cosmic Ontology & Layer 6: The White Page / The House of Ideas Summary */}
+                <div className="p-3 rounded-xl bg-slate-950/90 border border-white/30 space-y-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-xs font-bold font-mono text-white">
+                      📜 6-Layer Cosmic Hierarchy → Layer 6: The White Page / The House of Ideas (
+                      {PRIMARY_ADMIN_EMAIL})
+                    </span>
+                    <span className="text-[10px] font-mono text-amber-300">
+                      Everything comes from here — even Nothingness (Oblivion)
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-1.5">
+                    {SIX_LAYER_COSMIC_HIERARCHY.map((layer) => (
+                      <div
+                        key={layer.id}
+                        className="p-2 rounded-lg bg-slate-900 border border-slate-800 text-[10px] font-mono space-y-0.5"
+                      >
+                        <div className="font-bold text-amber-200 truncate">
+                          {layer.icon} {layer.name}
+                        </div>
+                        <div className="text-[9px] text-slate-300 line-clamp-2">
+                          {layer.canonicalDefinition}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  {onExecuteWhitePageDecree && (
+                    <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onExecuteWhitePageDecree('inscribe_creation');
+                          sound.playUpgradeFanfare();
+                          addLog(
+                            `[WHITE PAGE / HOUSE OF IDEAS] ${PRIMARY_ADMIN_EMAIL} inscribed Genesis across all 6 Cosmic Layers.`
+                          );
+                        }}
+                        className="px-2.5 py-1 rounded-lg bg-white text-slate-950 hover:bg-amber-200 text-[10px] font-mono font-bold cursor-pointer"
+                      >
+                        📜 Inscribe Creation (+50M 💎)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onExecuteWhitePageDecree('realign_overvoid_logic');
+                          sound.playUpgradeFanfare();
+                          addLog(
+                            `[OVERVOID / EXOVERSE] ${PRIMARY_ADMIN_EMAIL} realigned the laws of logic across all distinct Omniverses.`
+                          );
+                        }}
+                        className="px-2.5 py-1 rounded-lg bg-amber-500/20 border border-amber-400/50 text-amber-200 hover:bg-amber-500/30 text-[10px] font-mono font-bold cursor-pointer"
+                      >
+                        🕳️ Realign Overvoid Logic (+25M 💎)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onExecuteWhitePageDecree('invoke_oblivion_reset');
+                          sound.playUpgradeFanfare();
+                          addLog(
+                            `[OBLIVION / WHITE PAGE] ${PRIMARY_ADMIN_EMAIL} invoked Nothingness (Oblivion) & anchored Top 5 Envoys.`
+                          );
+                        }}
+                        className="px-2.5 py-1 rounded-lg bg-fuchsia-500/20 border border-fuchsia-400/50 text-fuchsia-200 hover:bg-fuchsia-500/30 text-[10px] font-mono font-bold cursor-pointer"
+                      >
+                        🌑 Invoke Oblivion Anchor (+77.7M 💎)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onExecuteWhitePageDecree('channel_house_of_ideas_harvest');
+                          sound.playUpgradeFanfare();
+                          addLog(
+                            `[HOUSE OF IDEAS] ${PRIMARY_ADMIN_EMAIL} harvested 10x Omni-Tribute across all 6 Cosmic Layers.`
+                          );
+                        }}
+                        className="px-2.5 py-1 rounded-lg bg-emerald-500/20 border border-emerald-400/50 text-emerald-200 hover:bg-emerald-500/30 text-[10px] font-mono font-bold cursor-pointer"
+                      >
+                        🏛️ House of Ideas 10x Harvest
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'troops' && (
+            <div className="space-y-4">
+              <div className="p-4 rounded-xl bg-slate-800/60 border border-slate-700 space-y-3">
+                <h3 className="text-sm font-bold text-white">
+                  T20 Celestial Vanguard Army Spawner
+                </h3>
+                <p className="text-xs text-slate-400">
+                  Instantly summon massive cohorts of Rank T20 troops to test billion and trillion
+                  power scaling.
+                </p>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
+                  <div className="p-3 rounded-xl bg-slate-900 border border-blue-500/40 space-y-2">
+                    <div className="text-xs font-bold text-blue-300">T20 Celestial Aegis</div>
+                    <div className="text-[11px] text-slate-400">Supreme Tank Cohort</div>
+                    <div className="flex gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => handleSpawnT20Troops('shieldbearer', 100_000n)}
+                        className="flex-1 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded text-xs font-mono font-bold cursor-pointer"
+                      >
+                        +100K
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleSpawnT20Troops('shieldbearer', 10_000_000n)}
+                        className="flex-1 py-1.5 bg-blue-700 hover:bg-blue-600 text-white rounded text-xs font-mono font-bold cursor-pointer"
+                      >
+                        +10M
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-slate-900 border border-emerald-500/40 space-y-2">
+                    <div className="text-xs font-bold text-emerald-300">T20 Celestial Deadeye</div>
+                    <div className="text-[11px] text-slate-400">Infinite Sniper Cohort</div>
+                    <div className="flex gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => handleSpawnT20Troops('shooter', 100_000n)}
+                        className="flex-1 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-mono font-bold cursor-pointer"
+                      >
+                        +100K
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleSpawnT20Troops('shooter', 10_000_000n)}
+                        className="flex-1 py-1.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded text-xs font-mono font-bold cursor-pointer"
+                      >
+                        +10M
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-slate-900 border border-orange-500/40 space-y-2">
+                    <div className="text-xs font-bold text-orange-300">
+                      T20 Celestial Annihilator
+                    </div>
+                    <div className="text-[11px] text-slate-400">Omega Siege Mortars</div>
+                    <div className="flex gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => handleSpawnT20Troops('bomber', 100_000n)}
+                        className="flex-1 py-1.5 bg-orange-600 hover:bg-orange-500 text-white rounded text-xs font-mono font-bold cursor-pointer"
+                      >
+                        +100K
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleSpawnT20Troops('bomber', 10_000_000n)}
+                        className="flex-1 py-1.5 bg-orange-700 hover:bg-orange-600 text-white rounded text-xs font-mono font-bold cursor-pointer"
+                      >
+                        +10M
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'world' && (
+            <div className="space-y-4">
+              {/* Time Freeze & Time Scale */}
+              <div className="p-4 rounded-xl bg-slate-800/60 border border-slate-700 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                      <Clock className="w-4 h-4 text-cyan-400" />
+                      Day / Night Time Engine Simulation
+                    </h3>
+                    <p className="text-xs text-slate-400">
+                      Matches AdminConsole isTimeFrozen and timeScale APIs.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onToggleTimeFreeze();
+                      sound.playSwing();
+                      addLog(`CMD: Time freeze toggled ${!isTimeFrozen ? 'FROZEN' : 'RESUMED'}.`);
+                    }}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold flex items-center gap-1.5 cursor-pointer ${
+                      isTimeFrozen ? 'bg-indigo-600 text-white' : 'bg-slate-700 text-slate-300'
+                    }`}
+                  >
+                    {isTimeFrozen ? (
+                      <Play className="w-3.5 h-3.5" />
+                    ) : (
+                      <Pause className="w-3.5 h-3.5" />
+                    )}
+                    {isTimeFrozen ? 'RESUME TIME' : 'FREEZE TIME'}
+                  </button>
+                </div>
+
+                <div className="space-y-1">
+                  <div className="flex justify-between text-xs font-mono">
+                    <span className="text-slate-400">Time Multiplier:</span>
+                    <span className="text-cyan-400 font-bold">{timeSpeedMultiplier}x Realtime</span>
+                  </div>
+                  <div className="flex gap-2">
+                    {[1, 2, 5, 10, 25, 50].map((spd) => (
+                      <button
+                        key={spd}
+                        type="button"
+                        onClick={() => {
+                          onSetTimeSpeed(spd);
+                          addLog(`CMD: Time scale set to ${spd}x.`);
+                        }}
+                        className={`flex-1 py-1.5 rounded text-xs font-mono font-bold border cursor-pointer ${
+                          timeSpeedMultiplier === spd
+                            ? 'bg-cyan-500 text-slate-950 border-cyan-400'
+                            : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
+                        }`}
+                      >
+                        {spd}x
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Dynamic Weather Engine Control */}
+              <div className="p-4 rounded-xl bg-slate-800/60 border border-slate-700 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                    <CloudRain className="w-4 h-4 text-cyan-400" />
+                    Atmospheric Weather Engine State
+                  </h3>
+                  <span className="text-xs font-mono text-cyan-300 font-bold uppercase">
+                    Active: {currentWeather || 'clear'}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {(['clear', 'rain', 'snow', 'storm'] as WeatherType[]).map((w) => (
+                    <button
+                      key={w}
+                      type="button"
+                      onClick={() => {
+                        if (onSetWeather) onSetWeather(w);
+                        if (w === 'storm') sound.playThunder();
+                        else sound.playWeatherChange();
+                        addLog(`CMD: Atmosphere manually altered to ${w.toUpperCase()}.`);
+                      }}
+                      className={`py-2 px-3 rounded-lg text-xs font-mono font-bold capitalize border transition-all cursor-pointer ${
+                        currentWeather === w
+                          ? 'bg-cyan-500 text-slate-950 border-cyan-400 shadow-md'
+                          : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
+                      }`}
+                    >
+                      {w === 'clear'
+                        ? '☀️ Clear'
+                        : w === 'rain'
+                          ? '🌧️ Rain'
+                          : w === 'snow'
+                            ? '❄️ Snow'
+                            : '⚡ Storm'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Simulated Rival Kingdom Raid */}
+              <div className="p-4 rounded-xl bg-slate-800/60 border border-slate-700 flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                    <Flame className="w-4 h-4 text-rose-400" />
+                    Simulate Rival Kingdom Territory Raid
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Triggers simulated rival lord invasion from the leaderboard to test defense
+                    garrison.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onTriggerRivalRaid();
+                    sound.playExplosion();
+                    addLog(
+                      'CMD: Dispatched AI Rival Kingdom [TITAN] Lord Chronos territory raid simulation.'
+                    );
+                  }}
+                  className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-mono font-bold shadow-md shadow-rose-600/30 active:scale-95 cursor-pointer"
+                >
+                  TRIGGER RAID
+                </button>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'moderation' && (
+            <div className="space-y-4" data-testid="admin-moderation-panel">
+              {/* Server-Wide GM / Moderator Decree Broadcast */}
+              <form
+                onSubmit={handleSendBroadcast}
+                className="p-4 rounded-xl bg-slate-800/60 border border-amber-500/40 space-y-2.5"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="text-sm font-bold text-white flex items-center gap-2">
+                    <Megaphone className="w-4 h-4 text-amber-400" />
+                    Global GM / Moderator Realm Decree Broadcast
+                  </div>
+                  <span className="text-[11px] font-mono text-amber-300">
+                    Sender: {privilegeProfile.email}
+                  </span>
+                </div>
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <label htmlFor="gm-broadcast-input" className="sr-only">
+                    GM Broadcast Message
+                  </label>
+                  <input
+                    id="gm-broadcast-input"
+                    data-testid="gm-broadcast-input"
+                    type="text"
+                    value={broadcastInput}
+                    onChange={(e) => setBroadcastInput(e.target.value)}
+                    placeholder="Enter server-wide GM / Moderator announcement for Clan & World Chat..."
+                    className="flex-1 px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-white focus:outline-none focus:border-amber-400"
+                  />
+                  <button
+                    type="submit"
+                    data-testid="gm-broadcast-submit-btn"
+                    className="px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-mono font-bold flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    <span>Broadcast Decree</span>
+                  </button>
+                </div>
+              </form>
+
+              {/* Sanction Reason Input */}
+              <div className="p-3.5 rounded-xl bg-slate-800/50 border border-slate-700 flex flex-col sm:flex-row sm:items-center gap-2">
+                <label
+                  htmlFor="moderation-reason-input"
+                  className="text-xs font-mono font-bold text-slate-300 whitespace-nowrap"
+                >
+                  Moderation / Role Reason:
+                </label>
+                <input
+                  id="moderation-reason-input"
+                  data-testid="moderation-reason-input"
+                  type="text"
+                  value={moderationReason}
+                  onChange={(e) => setModerationReason(e.target.value)}
+                  className="flex-1 px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-slate-200 focus:outline-none focus:border-red-400"
+                />
+              </div>
+
+              {/* Player & Staff Moderation Roster */}
+              <div className="space-y-2.5">
+                <div className="flex items-center justify-between text-xs font-mono text-slate-400">
+                  <span>
+                    REALM ACCOUNT & MODERATION ROSTER ({moderatedPlayers.length} ACCOUNTS)
+                  </span>
+                  <span className="text-emerald-400">
+                    Root Admin Protected: {PRIMARY_ADMIN_EMAIL}
+                  </span>
+                </div>
+
+                <div className="space-y-2">
+                  {moderatedPlayers.map((player) => {
+                    const isRoot = player.email === PRIMARY_ADMIN_EMAIL;
+                    return (
+                      <div
+                        key={player.id}
+                        data-testid={`mod-player-row-${player.id}`}
+                        className={`p-3.5 rounded-xl border flex flex-col lg:flex-row lg:items-center justify-between gap-3 ${
+                          isRoot
+                            ? 'bg-red-950/30 border-red-500/50'
+                            : 'bg-slate-950/80 border-slate-800'
+                        }`}
+                      >
+                        <div className="space-y-1 min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-xs font-mono font-bold text-amber-400">
+                              [{player.clanTag}]
+                            </span>
+                            <span className="text-sm font-bold text-white">{player.name}</span>
+                            <span className="text-xs font-mono text-cyan-300">{player.email}</span>
+                            <span
+                              data-testid={`mod-player-role-${player.id}`}
+                              className={`text-[10px] px-2 py-0.5 rounded font-mono font-bold uppercase ${
+                                player.role === 'owner_admin'
+                                  ? 'bg-red-600 text-white'
+                                  : player.role === 'game_master'
+                                    ? 'bg-purple-600 text-white'
+                                    : player.role === 'administrator'
+                                      ? 'bg-amber-500 text-slate-950'
+                                      : player.role === 'moderator'
+                                        ? 'bg-cyan-500 text-slate-950'
+                                        : 'bg-slate-800 text-slate-300'
+                              }`}
+                            >
+                              {player.role.replace('_', ' ')}
+                            </span>
+                            <span
+                              data-testid={`mod-player-status-${player.id}`}
+                              className={`text-[10px] px-2 py-0.5 rounded font-mono font-bold uppercase ${
+                                player.status === 'active'
+                                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                                  : player.status === 'warned'
+                                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                                    : player.status === 'muted'
+                                      ? 'bg-orange-500/20 text-orange-300 border border-orange-500/40'
+                                      : 'bg-rose-600/30 text-rose-200 border border-rose-500/50'
+                              }`}
+                            >
+                              {player.status.replace('_', ' ')}
+                            </span>
+                            <span className="text-[10px] font-mono text-slate-400">
+                              Warnings: {player.warningsCount}
+                            </span>
+                          </div>
+                          <div className="text-[11px] text-slate-400 font-mono truncate">
+                            Audit Note: {player.sanctionReason} (By: {player.lastActionBy})
+                          </div>
+                        </div>
+
+                        {isRoot ? (
+                          <div className="px-3 py-1.5 rounded-lg bg-red-950/80 border border-red-500/40 text-[11px] font-mono font-bold text-red-200 shrink-0">
+                            🛡️ Root Owner / GM / Admin / Moderator
+                          </div>
+                        ) : (
+                          <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+                            <button
+                              type="button"
+                              data-testid={`mod-warn-${player.id}`}
+                              onClick={() => handleExecuteModeration(player.id, 'warn')}
+                              className="px-2.5 py-1 rounded bg-amber-600/80 hover:bg-amber-500 text-white text-[11px] font-mono font-bold cursor-pointer"
+                            >
+                              Warn
+                            </button>
+                            <button
+                              type="button"
+                              data-testid={`mod-mute-${player.id}`}
+                              onClick={() => handleExecuteModeration(player.id, 'mute')}
+                              className="px-2.5 py-1 rounded bg-orange-600/80 hover:bg-orange-500 text-white text-[11px] font-mono font-bold cursor-pointer"
+                            >
+                              Mute Chat
+                            </button>
+                            <button
+                              type="button"
+                              data-testid={`mod-ban-${player.id}`}
+                              onClick={() => handleExecuteModeration(player.id, 'temp_ban')}
+                              className="px-2.5 py-1 rounded bg-rose-600/90 hover:bg-rose-500 text-white text-[11px] font-mono font-bold cursor-pointer"
+                            >
+                              Temp Ban
+                            </button>
+                            <button
+                              type="button"
+                              data-testid={`mod-restore-${player.id}`}
+                              onClick={() => handleExecuteModeration(player.id, 'restore_active')}
+                              className="px-2.5 py-1 rounded bg-emerald-600/80 hover:bg-emerald-500 text-white text-[11px] font-mono font-bold cursor-pointer"
+                            >
+                              Restore
+                            </button>
+                            <button
+                              type="button"
+                              data-testid={`mod-grant-mod-${player.id}`}
+                              onClick={() => handleExecuteModeration(player.id, 'grant_moderator')}
+                              className="px-2.5 py-1 rounded bg-cyan-600/80 hover:bg-cyan-500 text-white text-[11px] font-mono font-bold cursor-pointer"
+                            >
+                              +Moderator
+                            </button>
+                            <button
+                              type="button"
+                              data-testid={`mod-grant-admin-${player.id}`}
+                              onClick={() => handleExecuteModeration(player.id, 'grant_admin')}
+                              className="px-2.5 py-1 rounded bg-purple-600/80 hover:bg-purple-500 text-white text-[11px] font-mono font-bold cursor-pointer"
+                            >
+                              +Admin
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'contact' && (
+            <div className="space-y-5" data-testid="admin-contact-panel">
+              {/* Official Contact Directory for creatergame31@gmail.com */}
+              <div className="p-4 rounded-xl bg-slate-800/60 border border-amber-500/40 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                      <Mail className="w-4 h-4 text-amber-400" />
+                      Official Administration, GM, Admin & Moderator Contact Directory
+                    </h3>
+                    <p className="text-xs text-slate-300 mt-0.5">
+                      All executive administration, Game Master interventions, moderation reports,
+                      appeals, and security disclosures are managed by{' '}
+                      <span className="font-mono font-bold text-amber-300">
+                        {PRIMARY_ADMIN_EMAIL}
+                      </span>
+                      .
+                    </p>
+                  </div>
+                  <a
+                    href={`mailto:${PRIMARY_ADMIN_EMAIL}?subject=${encodeURIComponent('[ADMIN/GM/MODERATOR] Voxel Realms RPG Official Inquiry')}`}
+                    data-testid="direct-mailto-primary-link"
+                    className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-mono font-bold flex items-center gap-1.5 shadow-md"
+                  >
+                    <Mail className="w-3.5 h-3.5" />
+                    <span>Email {PRIMARY_ADMIN_EMAIL}</span>
+                  </a>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+                  {OFFICIAL_CONTACT_DIRECTORY.map((channel) => (
+                    <div
+                      key={channel.id}
+                      className="p-3 rounded-xl bg-slate-950/90 border border-slate-800 flex flex-col justify-between gap-2"
+                    >
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-xs font-bold text-white">{channel.title}</span>
+                          <span className="text-[10px] px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 font-mono border border-amber-500/30">
+                            {channel.roleLabel}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-400">{channel.description}</p>
+                      </div>
+                      <div className="flex items-center justify-between pt-2 border-t border-slate-800/80 text-[11px] font-mono">
+                        <span className="text-cyan-300 font-bold">{channel.email}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-slate-400">{channel.slaText}</span>
+                          <a
+                            href={buildMailtoHref(channel)}
+                            className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700"
+                          >
+                            Compose ↗
+                          </a>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* In-App Ticket Dispatch Form to creatergame31@gmail.com */}
+              <form
+                onSubmit={handleSubmitContactTicket}
+                className="p-4 rounded-xl bg-slate-800/60 border border-slate-700 space-y-3"
+              >
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-bold text-white">
+                    Dispatch In-App Support / Moderation Ticket to {PRIMARY_ADMIN_EMAIL}
+                  </h3>
+                  <span className="text-[11px] font-mono text-emerald-400">
+                    Assigned To: {PRIMARY_ADMIN_EMAIL}
+                  </span>
+                </div>
+
+                {ticketFormFeedback && (
+                  <div
+                    data-testid="ticket-form-feedback"
+                    className={`p-2.5 rounded-lg text-xs font-mono flex items-center gap-2 ${
+                      ticketFormFeedback.type === 'success'
+                        ? 'bg-emerald-950/80 border border-emerald-500/50 text-emerald-200'
+                        : 'bg-rose-950/80 border border-rose-500/50 text-rose-200'
+                    }`}
+                  >
+                    {ticketFormFeedback.type === 'success' ? (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                    ) : (
+                      <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+                    )}
+                    <span>{ticketFormFeedback.text}</span>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                  <div>
+                    <label
+                      htmlFor="ticket-category-select"
+                      className="block text-[11px] font-mono text-slate-400 mb-1"
+                    >
+                      Department / Control Desk
+                    </label>
+                    <select
+                      id="ticket-category-select"
+                      data-testid="ticket-category-select"
+                      value={ticketCategory}
+                      onChange={(e) => setTicketCategory(e.target.value as ContactCategory)}
+                      className="w-full px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-white"
+                    >
+                      <option value="administration">Administration Control</option>
+                      <option value="gm_intervention">Game Master (GM) Ops</option>
+                      <option value="moderation_report">Moderator Conduct Report</option>
+                      <option value="ban_appeal">Admin Sanction Appeal</option>
+                      <option value="security_disclosure">Security / GDPR Contact</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label
+                      htmlFor="ticket-priority-select"
+                      className="block text-[11px] font-mono text-slate-400 mb-1"
+                    >
+                      Priority Level
+                    </label>
+                    <select
+                      id="ticket-priority-select"
+                      value={ticketPriority}
+                      onChange={(e) =>
+                        setTicketPriority(e.target.value as 'low' | 'normal' | 'high' | 'critical')
+                      }
+                      className="w-full px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-white"
+                    >
+                      <option value="low">Low</option>
+                      <option value="normal">Normal</option>
+                      <option value="high">High</option>
+                      <option value="critical">Critical</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label
+                      htmlFor="ticket-subject-input"
+                      className="block text-[11px] font-mono text-slate-400 mb-1"
+                    >
+                      Ticket Subject
+                    </label>
+                    <input
+                      id="ticket-subject-input"
+                      data-testid="ticket-subject-input"
+                      type="text"
+                      value={ticketSubject}
+                      onChange={(e) => setTicketSubject(e.target.value)}
+                      placeholder="Brief inquiry or report title..."
+                      className="w-full px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-white"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <label htmlFor="ticket-message-input" className="sr-only">
+                    Ticket Details
+                  </label>
+                  <input
+                    id="ticket-message-input"
+                    data-testid="ticket-message-input"
+                    type="text"
+                    value={ticketMessage}
+                    onChange={(e) => setTicketMessage(e.target.value)}
+                    placeholder={`Describe the request or report for ${PRIMARY_ADMIN_EMAIL}...`}
+                    className="flex-1 px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-xs font-mono text-white"
+                  />
+                  <button
+                    type="submit"
+                    data-testid="submit-ticket-btn"
+                    className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-mono font-bold flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    <span>Dispatch to {PRIMARY_ADMIN_EMAIL}</span>
+                  </button>
+                </div>
+              </form>
+
+              {/* Live Support & Moderation Ticket Queue */}
+              <div className="space-y-2">
+                <div className="text-xs font-mono text-slate-400 flex items-center justify-between">
+                  <span>
+                    LIVE GM / MODERATOR TICKET QUEUE ({supportTickets.length} TICKETS ASSIGNED TO{' '}
+                    {PRIMARY_ADMIN_EMAIL})
+                  </span>
+                </div>
+                <div className="space-y-2">
+                  {supportTickets.map((tkt) => (
+                    <div
+                      key={tkt.id}
+                      data-testid={`support-ticket-${tkt.id}`}
+                      className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                    >
+                      <div className="space-y-1 min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-xs font-bold text-white">{tkt.subject}</span>
+                          <span className="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-amber-300 font-mono uppercase">
+                            {tkt.category.replace('_', ' ')}
+                          </span>
+                          <span
+                            data-testid={`ticket-status-${tkt.id}`}
+                            className={`text-[10px] px-2 py-0.5 rounded font-mono font-bold uppercase ${
+                              tkt.status === 'resolved'
+                                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                                : tkt.status === 'investigating'
+                                  ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                                  : 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
+                            }`}
+                          >
+                            {tkt.status}
+                          </span>
+                          <span className="text-[10px] font-mono text-slate-400">
+                            Assigned: {tkt.assignedToEmail}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-300">{tkt.message}</p>
+                        {tkt.resolutionNote && (
+                          <p className="text-[11px] font-mono text-emerald-400">
+                            Resolution ({tkt.resolvedByEmail}): {tkt.resolutionNote}
+                          </p>
+                        )}
+                      </div>
+
+                      {tkt.status !== 'resolved' && (
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <button
+                            type="button"
+                            data-testid={`investigate-ticket-${tkt.id}`}
+                            onClick={() =>
+                              handleTicketStatusUpdate(
+                                tkt.id,
+                                'investigating',
+                                `Under GM/Moderator review by ${PRIMARY_ADMIN_EMAIL}`
+                              )
+                            }
+                            className="px-2.5 py-1.5 rounded-lg bg-amber-600/80 hover:bg-amber-500 text-white text-[11px] font-mono font-bold cursor-pointer"
+                          >
+                            Investigate
+                          </button>
+                          <button
+                            type="button"
+                            data-testid={`resolve-ticket-${tkt.id}`}
+                            onClick={() =>
+                              handleTicketStatusUpdate(
+                                tkt.id,
+                                'resolved',
+                                `Verified & resolved by ${PRIMARY_ADMIN_EMAIL}`
+                              )
+                            }
+                            className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-mono font-bold cursor-pointer"
+                          >
+                            Resolve
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'logs' && (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-xs font-mono text-slate-300">
+                  <span>Server-Enforced Security & RBAC Audit Log (/api/admin/state)</span>
+                  <span className="text-[11px] text-cyan-300">
+                    {isServerStaffVerified
+                      ? `${serverAuditLog.length} Server Events`
+                      : 'Locked (Requires Verified Server Session)'}
+                  </span>
+                </div>
+                {isServerStaffVerified ? (
+                  <div
+                    data-testid="server-audit-log-list"
+                    className="p-3.5 rounded-xl bg-slate-950 border border-cyan-500/30 text-[11px] font-mono space-y-1.5 max-h-[200px] overflow-y-auto"
+                  >
+                    {serverAuditLog.length === 0 ? (
+                      <div className="text-slate-400">No server audit events recorded yet.</div>
+                    ) : (
+                      serverAuditLog.map((entry) => (
+                        <div
+                          key={entry.id}
+                          className="flex flex-wrap items-center gap-2 border-b border-slate-900 pb-1"
+                        >
+                          <span className="text-slate-400">{entry.timestampIso}</span>
+                          <span
+                            className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase ${
+                              entry.outcome === 'allowed'
+                                ? 'bg-emerald-500/20 text-emerald-300'
+                                : entry.outcome === 'clamped'
+                                  ? 'bg-amber-500/20 text-amber-300'
+                                  : 'bg-rose-500/20 text-rose-300'
+                            }`}
+                          >
+                            {entry.eventType} ({entry.outcome})
+                          </span>
+                          <span className="text-cyan-300">
+                            {entry.actorEmail} [{entry.actorRole}]
+                          </span>
+                          <span className="text-slate-200">{entry.detail}</span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                ) : (
+                  <div className="p-3.5 rounded-xl bg-slate-950 border border-amber-500/30 text-xs font-mono text-amber-200">
+                    Server audit log is fail-closed (HTTP 401/403). Authenticate with your server
+                    operator passkey above to inspect authoritative persisted audit records.
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <div className="text-xs font-mono text-slate-400">
+                  Client Console & Trust-Boundary Trace ({PRIMARY_ADMIN_EMAIL})
+                </div>
+                <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 text-xs font-mono text-emerald-400 space-y-1.5 max-h-[240px] overflow-y-auto">
+                  {consoleLogs.map((log, i) => (
+                    <div key={i} className="leading-relaxed">
+                      {log}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};

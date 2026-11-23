@@ -1,0 +1,993 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import React, { useState } from 'react';
+import {
+  X,
+  Cpu,
+  Terminal,
+  Copy,
+  Check,
+  Zap,
+  Layers,
+  Sparkles,
+  Swords,
+  Eye,
+  Monitor,
+  Smartphone,
+  HardDrive,
+  Sun,
+} from 'lucide-react';
+import {
+  CPP_ENGINE_SPEC,
+  CPP_CODE_MODULES,
+  CppCodeModule,
+  getSimulatedEngineStats,
+} from '../game/cppEngine';
+import {
+  CULTIVATION_REALMS,
+  calculateRealmSuppression,
+  getCultivationAuraVisualSpec,
+} from '../game/cultivationMath';
+import {
+  GraphicsQualityPreset,
+  TargetPlatform,
+  computeDeploymentBundleManifest,
+  computeLightingStrategy,
+  computeLodChainPolicy,
+  computeMasterTextureImportOverride,
+  computeUberShaderKeywords,
+  getImplementationTransparencySummary,
+} from '../game/graphicsEngine';
+import {
+  ARCHITECT_RELEASE_DATE_DISPLAY,
+  ARCHITECT_RELEASE_VERSION,
+  GPU_BACKEND_COMPATIBILITY,
+  GpuComputeBackendId,
+  HARDWARE_ISA_PROFILES,
+  HardwareIsaId,
+  MemoryLayoutStrategy,
+  THERMAL_TDP_ENVELOPES,
+  TargetRefreshRateHz,
+  ThermalTdpEnvelopeId,
+  generateArchitectCompatibilityDiagnostic,
+} from '../game/architectOptimization';
+import { runFullSystemValidationReport } from '../game/systemValidation';
+import { sound } from '../game/audio';
+
+interface CppArchitectureModalProps {
+  targetPlatform?: TargetPlatform;
+  graphicsQuality?: GraphicsQualityPreset;
+  hdPackMounted?: boolean;
+  onChangeTargetPlatform?: (platform: TargetPlatform) => void;
+  onChangeGraphicsQuality?: (quality: GraphicsQualityPreset) => void;
+  onToggleHdPackMounted?: () => void;
+  onClose: () => void;
+}
+
+export const CppArchitectureModal: React.FC<CppArchitectureModalProps> = ({
+  targetPlatform = 'pc_console' as TargetPlatform,
+  graphicsQuality = 'ultra' as GraphicsQualityPreset,
+  hdPackMounted = false,
+  onChangeTargetPlatform,
+  onChangeGraphicsQuality,
+  onToggleHdPackMounted,
+  onClose,
+}) => {
+  const [selectedModuleId, setSelectedModuleId] = useState<CppCodeModule['id']>(
+    'cultivation_karma_master'
+  );
+  const [copied, setCopied] = useState(false);
+
+  // Software & Hardware Architect Optimizer interactive state (17/11/2026 — v1.5.0)
+  const [isaId, setIsaId] = useState<HardwareIsaId>('x86_64_avx512');
+  const [gpuBackendId, setGpuBackendId] = useState<GpuComputeBackendId>('vulkan_1_3');
+  const [thermalEnvelopeId, setThermalEnvelopeId] =
+    useState<ThermalTdpEnvelopeId>('enthusiast_desktop_350w');
+  const [memoryLayout, setMemoryLayout] = useState<MemoryLayoutStrategy>('soa_contiguous');
+  const [logicalCores, setLogicalCores] = useState<number>(16);
+  const [targetRefreshHz, setTargetRefreshHz] = useState<TargetRefreshRateHz>(60);
+
+  // Interactive C++20 Realm Suppression & HDR10+ Aura Simulator state
+  const [simAttackerRealm, setSimAttackerRealm] = useState<number>(2); // Golden Core (Index 2)
+  const [simDefenderRealm, setSimDefenderRealm] = useState<number>(0); // Qi Refinement (Index 0)
+  const [simGreatDaos, setSimGreatDaos] = useState<number>(5);
+
+  const stats = getSimulatedEngineStats();
+  const validationReport = runFullSystemValidationReport();
+  const transparencySummary = getImplementationTransparencySummary();
+  const activeModule =
+    CPP_CODE_MODULES.find((m) => m.id === selectedModuleId) || CPP_CODE_MODULES[0];
+
+  const suppression = calculateRealmSuppression(simAttackerRealm, simDefenderRealm);
+  const auraSpec = getCultivationAuraVisualSpec(simAttackerRealm, simGreatDaos);
+
+  const architectReport = generateArchitectCompatibilityDiagnostic({
+    isaId,
+    gpuBackendId,
+    thermalEnvelopeId,
+    memoryLayout,
+    entityCount: 100_000,
+    logicalCores,
+    targetRefreshHz,
+  });
+
+  // Compute live 5-pillar Cross-Platform Engine specs
+  const texOverride = computeMasterTextureImportOverride(
+    targetPlatform,
+    graphicsQuality,
+    hdPackMounted
+  );
+  const lodPolicy = computeLodChainPolicy(targetPlatform, graphicsQuality, hdPackMounted);
+  const lightingSpec = computeLightingStrategy(targetPlatform, graphicsQuality);
+  const uberKeywords = computeUberShaderKeywords(targetPlatform, graphicsQuality, hdPackMounted);
+  const bundleManifest = computeDeploymentBundleManifest(targetPlatform, hdPackMounted);
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(activeModule.code);
+    setCopied(true);
+    sound.playSwing();
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/85 backdrop-blur-xs animate-in fade-in duration-200">
+      <div className="relative w-full max-w-5xl bg-slate-900 border-2 border-emerald-500/40 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[94vh]">
+        {/* Header */}
+        <div className="relative px-4 sm:px-6 py-4 bg-gradient-to-r from-emerald-950/85 via-slate-900 to-cyan-950/85 border-b border-emerald-500/30 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="p-2.5 rounded-xl bg-emerald-500/20 border border-emerald-500/50 text-emerald-400 shrink-0">
+              <Cpu className="w-6 h-6 sm:w-7 sm:h-7" />
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="text-base sm:text-xl font-bold font-cinzel text-emerald-100">
+                  Software & Hardware Architect Studio · C++20 Engine
+                </h2>
+                <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 font-mono font-bold">
+                  {ARCHITECT_RELEASE_VERSION} · {ARCHITECT_RELEASE_DATE_DISPLAY} · Score{' '}
+                  {architectReport.overallOptimizationScore}/100
+                </span>
+              </div>
+              <p className="text-xs text-emerald-200/75 truncate mt-0.5">
+                x86_64 AVX-512 · ARM64 SVE2 · Apple Silicon 128B UMA · RISC-V RVV 1.0 · SoA Memory ·
+                Lock-Free Job DAG
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800/80 transition-colors shrink-0"
+            aria-label="Close modal"
+          >
+            <X className="w-6 h-6" />
+          </button>
+        </div>
+
+        {/* Content Body */}
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5 text-slate-200">
+          {/* Software Architect & Hardware Architect Compatibility & Optimization Panel (17/11/2026) */}
+          <div
+            className="p-4 rounded-xl bg-slate-950/95 border border-emerald-500/40 space-y-4"
+            data-testid="architect-optimization-panel"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
+              <div>
+                <h3 className="text-xs sm:text-sm font-bold text-emerald-300 uppercase tracking-wider flex items-center gap-2">
+                  <Cpu className="w-4 h-4 text-emerald-400" />
+                  Software & Hardware Architect Compatibility Matrix (
+                  {ARCHITECT_RELEASE_DATE_DISPLAY})
+                </h3>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  Configure CPU ISA vector widths, GPU compute backend, Thermal TDP envelope, SoA vs
+                  AoS memory layout, and Lock-Free Work-Stealing Job Thread Pool for 100,000 ECS
+                  entities.
+                </p>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span
+                  data-testid="architect-score-badge"
+                  className="px-2.5 py-1 rounded-lg bg-emerald-500/20 border border-emerald-400/50 text-emerald-200 font-mono text-xs font-bold"
+                >
+                  Optimization Score: {architectReport.overallOptimizationScore}/100
+                </span>
+                <span className="px-2.5 py-1 rounded-lg bg-cyan-500/20 border border-cyan-400/40 text-cyan-200 font-mono text-xs font-bold">
+                  Wasm SIMD128: {architectReport.wasmSimd128Compatible ? 'READY' : 'FALLBACK'}
+                </span>
+              </div>
+            </div>
+
+            {/* Hardware Architect Controls: CPU ISA, GPU Backend, Thermal TDP */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div>
+                <label
+                  htmlFor="arch-isa-select"
+                  className="block text-[11px] font-mono text-emerald-300 font-bold mb-1"
+                >
+                  Hardware CPU ISA & SIMD Profile
+                </label>
+                <select
+                  id="arch-isa-select"
+                  data-testid="arch-isa-select"
+                  value={isaId}
+                  onChange={(e) => {
+                    sound.playButton();
+                    setIsaId(e.target.value as HardwareIsaId);
+                  }}
+                  className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-xs text-white font-mono"
+                >
+                  {Object.values(HARDWARE_ISA_PROFILES).map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.label}
+                    </option>
+                  ))}
+                </select>
+                <div className="text-[10px] text-slate-400 font-mono mt-1">
+                  {architectReport.activeHardwareIsa.simdRegisterWidthBits}-bit (
+                  {architectReport.activeHardwareIsa.float32LanesPerRegister}× float32) ·{' '}
+                  {architectReport.activeHardwareIsa.cacheLineSizeBytes}B Cache Line ·{' '}
+                  {architectReport.activeHardwareIsa.peakGflopsPerCore} GFLOPS/core
+                </div>
+              </div>
+
+              <div>
+                <label
+                  htmlFor="arch-gpu-select"
+                  className="block text-[11px] font-mono text-cyan-300 font-bold mb-1"
+                >
+                  Hardware GPU Compute & Render Tier
+                </label>
+                <select
+                  id="arch-gpu-select"
+                  data-testid="arch-gpu-select"
+                  value={gpuBackendId}
+                  onChange={(e) => {
+                    sound.playButton();
+                    setGpuBackendId(e.target.value as GpuComputeBackendId);
+                  }}
+                  className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-xs text-white font-mono"
+                >
+                  {Object.values(GPU_BACKEND_COMPATIBILITY).map((g) => (
+                    <option key={g.id} value={g.id}>
+                      {g.label}
+                    </option>
+                  ))}
+                </select>
+                <div className="text-[10px] text-slate-400 font-mono mt-1">
+                  Min VRAM: {architectReport.activeGpuBackend.minRecommendedVramGb} GB · Max
+                  Instanced Draws: {architectReport.activeGpuBackend.maxInstancedDrawCallsPerFrame}
+                  /frame · Fallback: {architectReport.activeGpuBackend.fallbackBackendId}
+                </div>
+              </div>
+
+              <div>
+                <label
+                  htmlFor="arch-thermal-select"
+                  className="block text-[11px] font-mono text-amber-300 font-bold mb-1"
+                >
+                  Hardware Thermal & TDP Envelope
+                </label>
+                <select
+                  id="arch-thermal-select"
+                  data-testid="arch-thermal-select"
+                  value={thermalEnvelopeId}
+                  onChange={(e) => {
+                    sound.playButton();
+                    setThermalEnvelopeId(e.target.value as ThermalTdpEnvelopeId);
+                  }}
+                  className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-xs text-white font-mono"
+                >
+                  {Object.values(THERMAL_TDP_ENVELOPES).map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.label}
+                    </option>
+                  ))}
+                </select>
+                <div className="text-[10px] text-slate-400 font-mono mt-1">
+                  Sustained: {architectReport.activeThermalEnvelope.sustainedTdpWatts}W (Boost{' '}
+                  {architectReport.activeThermalEnvelope.peakBoostWatts}W) · Throttle:{' '}
+                  {architectReport.activeThermalEnvelope.thermalThrottleThresholdC}°C
+                </div>
+              </div>
+            </div>
+
+            {/* Software Architect Controls: Memory Layout (SoA vs AoS), Logical Cores, Display Refresh */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-1">
+              <div className="p-3 rounded-xl bg-slate-900/90 border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-emerald-300">
+                    DOD Memory Layout (100k Entities)
+                  </span>
+                  <button
+                    type="button"
+                    data-testid="arch-toggle-memory-layout-btn"
+                    onClick={() => {
+                      sound.playButton();
+                      setMemoryLayout((prev) =>
+                        prev === 'soa_contiguous' ? 'aos_legacy' : 'soa_contiguous'
+                      );
+                    }}
+                    className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold border transition-all cursor-pointer ${
+                      memoryLayout === 'soa_contiguous'
+                        ? 'bg-emerald-500/25 border-emerald-400 text-emerald-200'
+                        : 'bg-rose-500/25 border-rose-400 text-rose-200'
+                    }`}
+                  >
+                    {memoryLayout === 'soa_contiguous'
+                      ? 'SoA Contiguous (SIMD)'
+                      : 'AoS Legacy (Object)'}
+                  </button>
+                </div>
+                <div className="text-[11px] font-mono text-slate-300">
+                  Hot Loop:{' '}
+                  <span className="text-white font-bold">
+                    {architectReport.memoryComparison.hotLoopFrameTimeMs} ms
+                  </span>{' '}
+                  ({architectReport.memoryComparison.speedupVsAosMultiplier}× vs AoS)
+                </div>
+                <div className="text-[10px] font-mono text-slate-400">
+                  L1/L2 Cache Miss:{' '}
+                  <span className="text-emerald-300">
+                    {architectReport.memoryComparison.estimatedCacheMissRatePct}%
+                  </span>{' '}
+                  · Bandwidth:{' '}
+                  <span className="text-cyan-300">
+                    {architectReport.memoryComparison.memoryBandwidthGbPerSecAt60Hz} GB/s
+                  </span>
+                </div>
+              </div>
+
+              <div className="p-3 rounded-xl bg-slate-900/90 border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between">
+                  <label
+                    htmlFor="arch-cores-range"
+                    className="text-xs font-bold text-cyan-300 cursor-pointer"
+                  >
+                    Lock-Free Job Pool ({logicalCores} Cores)
+                  </label>
+                  <span className="text-[10px] font-mono text-emerald-300 bg-emerald-950 px-2 py-0.5 rounded border border-emerald-500/30">
+                    0.00ms Mutex Stall
+                  </span>
+                </div>
+                <input
+                  id="arch-cores-range"
+                  type="range"
+                  min={2}
+                  max={32}
+                  step={2}
+                  value={logicalCores}
+                  onChange={(e) => setLogicalCores(Number(e.target.value))}
+                  className="w-full accent-cyan-400"
+                />
+                <div className="text-[10px] font-mono text-slate-400">
+                  Active Workers: {architectReport.jobSystemReport.workerThreadsActive} · DAG Frame
+                  Time:{' '}
+                  <span className="text-white font-bold">
+                    {architectReport.jobSystemReport.totalFrameExecutionMs} ms
+                  </span>{' '}
+                  ({architectReport.jobSystemReport.parallelEfficiencyPct}% Eff.)
+                </div>
+              </div>
+
+              <div className="p-3 rounded-xl bg-slate-900/90 border border-slate-800 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-amber-300">Frame-Budget Auto-Scaler</span>
+                  <div className="flex items-center gap-1">
+                    {([60, 120, 240] as TargetRefreshRateHz[]).map((hz) => (
+                      <button
+                        key={hz}
+                        type="button"
+                        onClick={() => {
+                          sound.playButton();
+                          setTargetRefreshHz(hz);
+                        }}
+                        className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-bold border cursor-pointer ${
+                          targetRefreshHz === hz
+                            ? 'bg-amber-500/25 border-amber-400 text-amber-200'
+                            : 'bg-slate-950 border-slate-700 text-slate-400'
+                        }`}
+                      >
+                        {hz}Hz
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="text-[11px] font-mono text-slate-300">
+                  Measured:{' '}
+                  <span className="text-white font-bold">
+                    {architectReport.frameBudgetReport.measuredFrameTimeMs} ms
+                  </span>{' '}
+                  / Budget {architectReport.frameBudgetReport.frameBudgetMs} ms
+                </div>
+                <div className="text-[10px] font-mono text-emerald-300 truncate">
+                  {architectReport.frameBudgetReport.governorActionLabel}
+                </div>
+              </div>
+            </div>
+          </div>
+          {/* 5-Pillar Cross-Platform Engine Pipeline Interactive Control Center */}
+          <div
+            className="p-4 rounded-xl bg-slate-950/95 border border-cyan-500/40 space-y-4"
+            data-testid="cross-platform-pipeline-panel"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-3">
+              <div>
+                <h3 className="text-xs sm:text-sm font-bold text-cyan-300 uppercase tracking-wider flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-cyan-400" />
+                  5-Pillar Cross-Platform Pipeline (PC/PS5/Xbox vs Mobile Android/iOS)
+                </h3>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  Single 4K Master Source with automatic platform overrides, LOD Bias memory
+                  culling, Hybrid GI/Baked Lightmaps, Unified Uber Shader switches, and Addressable
+                  Bundles.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  data-testid="pipeline-platform-pc-btn"
+                  onClick={() => {
+                    sound.playButton();
+                    onChangeTargetPlatform?.('pc_console');
+                  }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold flex items-center gap-1.5 border transition-all cursor-pointer ${
+                    targetPlatform === 'pc_console'
+                      ? 'bg-cyan-500/25 border-cyan-400 text-cyan-200 shadow-sm shadow-cyan-500/20'
+                      : 'bg-slate-900 border-slate-700 text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <Monitor className="w-3.5 h-3.5" />
+                  PC / PS5 / Xbox
+                </button>
+                <button
+                  type="button"
+                  data-testid="pipeline-platform-mobile-btn"
+                  onClick={() => {
+                    sound.playButton();
+                    onChangeTargetPlatform?.('mobile');
+                  }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold flex items-center gap-1.5 border transition-all cursor-pointer ${
+                    targetPlatform === 'mobile'
+                      ? 'bg-amber-500/25 border-amber-400 text-amber-200 shadow-sm shadow-amber-500/20'
+                      : 'bg-slate-900 border-slate-700 text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <Smartphone className="w-3.5 h-3.5" />
+                  Mobile (Android / iOS)
+                </button>
+                {(['ultra', 'high', 'balanced'] as GraphicsQualityPreset[]).map((q) => (
+                  <button
+                    key={q}
+                    type="button"
+                    onClick={() => {
+                      sound.playButton();
+                      onChangeGraphicsQuality?.(q);
+                    }}
+                    className={`px-2.5 py-1.5 rounded-lg text-[11px] font-mono font-bold uppercase border transition-all cursor-pointer ${
+                      graphicsQuality === q
+                        ? 'bg-purple-500/25 border-purple-400 text-purple-200'
+                        : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    {q}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* 5 Pillars Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {/* 1. Master Asset Workflow (Textures) */}
+              <div className="p-3 rounded-xl bg-slate-900/90 border border-slate-800 space-y-1.5">
+                <div className="text-xs font-bold text-cyan-300 flex items-center justify-between">
+                  <span>1. Master Asset Workflow</span>
+                  <span
+                    className="px-2 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-500/40 font-mono text-[10px]"
+                    data-testid="pipeline-texture-format"
+                  >
+                    {texOverride.compressionFormat} · {texOverride.maxPlatformResolutionPx}px
+                  </span>
+                </div>
+                <div className="text-[11px] text-slate-300 font-mono">
+                  Live WebGL2 Canvas:{' '}
+                  <span className="text-emerald-300 font-bold">
+                    {texOverride.runtimeCanvasResolutionPx}×{texOverride.runtimeCanvasResolutionPx}
+                    px
+                  </span>{' '}
+                  · Anisotropy:{' '}
+                  <span className="text-amber-300">{texOverride.anisotropySamples}×</span>
+                </div>
+                <div className="text-[11px] text-slate-400">
+                  Modeled Import Target:{' '}
+                  <span className="text-cyan-300">{texOverride.compressionLabel}</span> (from 4096px
+                  Master Spec)
+                </div>
+              </div>
+
+              {/* 2. Geometry & LOD Scaling (Meshes) */}
+              <div className="p-3 rounded-xl bg-slate-900/90 border border-slate-800 space-y-1.5">
+                <div className="text-xs font-bold text-purple-300 flex items-center justify-between">
+                  <span>2. Geometry & LOD Scaling</span>
+                  <span
+                    className="px-2 py-0.5 rounded bg-purple-950 text-purple-300 border border-purple-500/40 font-mono text-[10px]"
+                    data-testid="pipeline-lod-bias"
+                  >
+                    LOD Bias +{lodPolicy.lodBias} · Best: LOD {lodPolicy.highestLoadedLodIndex}
+                  </span>
+                </div>
+                <div className="text-[11px] text-slate-300 font-mono">
+                  Live THREE.LOD Chain + InstancedMesh Foliage Scaling
+                </div>
+                <div className="text-[11px] text-slate-400">
+                  {lodPolicy.skipLod0InMemory ? (
+                    <span className="text-amber-300">
+                      Mobile Skips LOD 0 at Dist 0m (Modeled -{lodPolicy.memorySavedMb} MB RAM
+                      saved)
+                    </span>
+                  ) : (
+                    <span className="text-emerald-300">
+                      PC/Console Enables Full LOD 0 Close-Up Mesh &amp; 800 Grass Tufts
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* 3. Lighting Strategies (The Visual Gap) */}
+              <div className="p-3 rounded-xl bg-slate-900/90 border border-slate-800 space-y-1.5">
+                <div className="text-xs font-bold text-amber-300 flex items-center justify-between">
+                  <span className="flex items-center gap-1">
+                    <Sun className="w-3.5 h-3.5 text-amber-400" /> 3. Lighting Strategy
+                  </span>
+                  <span
+                    className="px-2 py-0.5 rounded bg-amber-950 text-amber-300 border border-amber-500/40 font-mono text-[10px]"
+                    data-testid="pipeline-lighting-mode"
+                  >
+                    {lightingSpec.enableRealtimeGI ? 'HYBRID GI + BAKED' : 'BAKED LIGHTMAP'}
+                  </span>
+                </div>
+                <div className="text-[11px] text-slate-300 font-mono">
+                  Hybrid Probe/Rim:{' '}
+                  <span className="text-white">{lightingSpec.enableRealtimeGI ? 'ON' : 'OFF'}</span>{' '}
+                  · FogExp2:{' '}
+                  <span className="text-white">
+                    {lightingSpec.enableVolumetricFog ? 'FULL' : 'REDUCED'}
+                  </span>
+                </div>
+                <div className="text-[11px] text-slate-400">
+                  Live Small-Prop <code className="text-slate-300">castShadow</code>:{' '}
+                  <span
+                    className={
+                      lightingSpec.smallPropCastShadows ? 'text-emerald-300' : 'text-amber-300'
+                    }
+                  >
+                    {lightingSpec.smallPropCastShadows
+                      ? 'ENABLED (PC/Console)'
+                      : 'CULLED (Mobile Perf Culling)'}
+                  </span>
+                </div>
+              </div>
+
+              {/* 4. Shader & Material Management (Unified Uber Shader) */}
+              <div className="p-3 rounded-xl bg-slate-900/90 border border-slate-800 space-y-1.5">
+                <div className="text-xs font-bold text-emerald-300 flex items-center justify-between">
+                  <span>4. Unified Uber Shader</span>
+                  <span
+                    className="px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-500/40 font-mono text-[10px]"
+                    data-testid="pipeline-shader-complexity"
+                  >
+                    {uberKeywords.mathComplexity === 'full_pbr_console'
+                      ? '4 KEYWORDS ON'
+                      : 'MOBILE ALU FAST'}
+                  </span>
+                </div>
+                <div className="text-[11px] text-slate-300 font-mono">
+                  Rim Uniform: {uberKeywords.USE_RIM_LIGHT ? 'ON' : 'OFF'} · normalScale:{' '}
+                  {uberKeywords.USE_DETAIL_NORMALS ? 'ACTIVE' : '0.0 (OFF)'}
+                </div>
+                <div className="text-[11px] text-slate-400 font-mono">
+                  bumpScale: {uberKeywords.USE_PARALLAX_OCCLUSION ? 'ACTIVE' : '0.0 (OFF)'} · SSS
+                  Wrap: {uberKeywords.USE_SUBSURFACE_SCATTERING ? 'ON' : 'OFF'}
+                </div>
+              </div>
+
+              {/* 5. Deployment & Build Size (Addressables / Asset Bundles) */}
+              <div className="p-3 rounded-xl bg-slate-900/90 border border-slate-800 space-y-1.5 md:col-span-2">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="text-xs font-bold text-cyan-200 flex items-center gap-1.5">
+                    <HardDrive className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>5. Deployment &amp; Addressable Asset Bundles (Modeled Manifest)</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span
+                      className="text-xs font-mono font-bold text-emerald-300"
+                      data-testid="pipeline-install-size"
+                    >
+                      Install Size:{' '}
+                      {bundleManifest.effectiveTotalInstallMb >= 1000
+                        ? `${(bundleManifest.effectiveTotalInstallMb / 1000).toFixed(2)} GB`
+                        : `${bundleManifest.effectiveTotalInstallMb} MB`}
+                    </span>
+                    {targetPlatform === 'mobile' && onToggleHdPackMounted && (
+                      <button
+                        type="button"
+                        data-testid="pipeline-toggle-hd-pack-btn"
+                        onClick={() => {
+                          sound.playButton();
+                          onToggleHdPackMounted();
+                        }}
+                        className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold border transition-all cursor-pointer ${
+                          hdPackMounted
+                            ? 'bg-emerald-500/25 border-emerald-400 text-emerald-200'
+                            : 'bg-amber-500/20 border-amber-400 text-amber-200 hover:bg-amber-500/30'
+                        }`}
+                      >
+                        {hdPackMounted
+                          ? '✓ HighDefinition Pack Mounted (+3.85 GB)'
+                          : '⬇ Mount Optional HighDefinition Pack (+3.85 GB)'}
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <div className="text-[11px] text-slate-300">
+                  {targetPlatform === 'mobile' ? (
+                    <>
+                      Modeled Base Mobile Build:{' '}
+                      <span className="text-emerald-300 font-mono">640 MB</span> (&lt; 2GB Store
+                      Limit). Toggling the optional{' '}
+                      <span className="text-amber-300 font-mono">
+                        {bundleManifest.hdAddressablePack.packId}
+                      </span>{' '}
+                      immediately promotes live WebGL2 CanvasTextures to 1024px and unlocks LOD 0 in
+                      the 3D viewport.
+                    </>
+                  ) : (
+                    <>
+                      Modeled Console / PC Build:{' '}
+                      <span className="text-cyan-300 font-mono">68.40 GB</span> (Simulates full 4K
+                      BC7 Master Texture &amp; LOD 0 packaging while running live 1024px WebGL2
+                      procedural PBR textures in-browser).
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Real-time Simulated C++20 + HDR10+ Profiler Grid */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="p-3 rounded-xl bg-slate-800/70 border border-slate-700">
+              <div className="text-xs text-emerald-400 flex items-center gap-1.5 font-semibold">
+                <Zap className="w-4 h-4" /> NEON / AVX-512 SIMD
+              </div>
+              <div className="text-base sm:text-lg font-mono font-bold text-white mt-1">
+                {(stats.simdInstructionsPerSec / 1e9).toFixed(2)} B / sec
+              </div>
+              <div className="text-[10px] text-slate-400">{stats.simdWidth}</div>
+            </div>
+
+            <div className="p-3 rounded-xl bg-slate-800/70 border border-slate-700">
+              <div className="text-xs text-amber-400 flex items-center gap-1.5 font-semibold">
+                <Swords className="w-4 h-4" /> Realm Suppression
+              </div>
+              <div className="text-base sm:text-lg font-mono font-bold text-amber-300 mt-1">
+                100.0x Verified
+              </div>
+              <div className="text-[10px] text-slate-400">Golden Core vs Qi Refine</div>
+            </div>
+
+            <div className="p-3 rounded-xl bg-slate-800/70 border border-slate-700">
+              <div className="text-xs text-cyan-400 flex items-center gap-1.5 font-semibold">
+                <Sparkles className="w-4 h-4" /> HDR10+ Swapchain
+              </div>
+              <div className="text-base sm:text-lg font-mono font-bold text-cyan-300 mt-1">
+                {stats.peakLuminanceNits} Nits PQ
+              </div>
+              <div className="text-[10px] text-slate-400">{stats.hdrColorSpace}</div>
+            </div>
+
+            <div className="p-3 rounded-xl bg-slate-800/70 border border-slate-700">
+              <div className="text-xs text-purple-400 flex items-center gap-1.5 font-semibold">
+                <Layers className="w-4 h-4" /> AI NavMesh & ECS
+              </div>
+              <div className="text-base sm:text-lg font-mono font-bold text-white mt-1">
+                Lv. 1–1000 AI
+              </div>
+              <div className="text-[10px] text-slate-400">A* + Weather Siphoning</div>
+            </div>
+          </div>
+
+          {/* Interactive Live C++20 Formula Verification Sandbox */}
+          <div className="p-4 rounded-xl bg-slate-950/90 border border-amber-500/30 space-y-3">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <h3 className="text-xs font-bold text-amber-300 uppercase tracking-wider flex items-center gap-1.5">
+                <Eye className="w-4 h-4 text-amber-400" />
+                Interactive C++20 Realm Suppression & HDR10+ Aura Descriptor Verification
+              </h3>
+              <span className="text-[11px] font-mono text-emerald-300 bg-emerald-950/60 px-2.5 py-0.5 rounded border border-emerald-500/30">
+                static_assert(GoldenCore vs QiRefinement == 100.0x) ✓
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div>
+                <label
+                  htmlFor="cpp-sim-attacker"
+                  className="block text-[11px] font-mono text-slate-400 mb-1"
+                >
+                  Attacker / Cultivator Realm
+                </label>
+                <select
+                  id="cpp-sim-attacker"
+                  value={simAttackerRealm}
+                  onChange={(e) => setSimAttackerRealm(Number(e.target.value))}
+                  className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-xs text-white font-mono"
+                >
+                  {CULTIVATION_REALMS.map((r) => (
+                    <option key={r.id} value={r.index}>
+                      [{r.index}] {r.name} ({r.chineseName})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label
+                  htmlFor="cpp-sim-defender"
+                  className="block text-[11px] font-mono text-slate-400 mb-1"
+                >
+                  Target / Defender Realm
+                </label>
+                <select
+                  id="cpp-sim-defender"
+                  value={simDefenderRealm}
+                  onChange={(e) => setSimDefenderRealm(Number(e.target.value))}
+                  className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-xs text-white font-mono"
+                >
+                  {CULTIVATION_REALMS.map((r) => (
+                    <option key={r.id} value={r.index}>
+                      [{r.index}] {r.name} ({r.chineseName})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label
+                  htmlFor="cpp-sim-daos"
+                  className="block text-[11px] font-mono text-slate-400 mb-1"
+                >
+                  Mastered Great Dao Rules ({simGreatDaos} Halos)
+                </label>
+                <input
+                  id="cpp-sim-daos"
+                  type="range"
+                  min={1}
+                  max={12}
+                  value={simGreatDaos}
+                  onChange={(e) => setSimGreatDaos(Number(e.target.value))}
+                  className="w-full accent-amber-400 mt-2"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+              <div className="p-3 rounded-lg bg-slate-900/90 border border-amber-500/30">
+                <div className="text-[11px] text-amber-300 font-semibold">
+                  Realm Suppression Output (10^ΔRealm)
+                </div>
+                <div className="text-lg font-mono font-bold text-white mt-0.5">
+                  {suppression.damageMultiplier >= 1
+                    ? `${suppression.damageMultiplier.toLocaleString()}x Damage Dealt`
+                    : `${suppression.damageMultiplier}x Damage (Suppressed)`}
+                </div>
+                <div className="text-[11px] text-slate-400 mt-0.5">
+                  {suppression.suppressionLabel} · Incoming Damage Reduction:{' '}
+                  <span className="text-emerald-300 font-mono">
+                    {suppression.incomingDamageReductionPct}%
+                  </span>
+                </div>
+              </div>
+
+              <div className="p-3 rounded-lg bg-slate-900/90 border border-cyan-500/30">
+                <div className="text-[11px] text-cyan-300 font-semibold">
+                  HDR10+ Aura Push-Constant (No Overhead Level Tag)
+                </div>
+                <div className="text-sm font-mono font-bold text-white mt-0.5">
+                  {auraSpec.label}
+                </div>
+                <div className="text-[11px] text-slate-400 mt-0.5">
+                  Peak Luminance:{' '}
+                  <span className="text-amber-300 font-mono">
+                    {auraSpec.hdrPeakLuminanceNits} nits
+                  </span>{' '}
+                  · Halos: <span className="text-purple-300 font-mono">{auraSpec.haloCount}</span> ·
+                  Level Tag Hidden: <span className="text-emerald-300 font-mono">TRUE</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* C++20 Module Selector Tabs */}
+          <div className="space-y-2">
+            <div className="flex flex-wrap gap-2">
+              {CPP_CODE_MODULES.map((mod) => {
+                const isSelected = mod.id === selectedModuleId;
+                return (
+                  <button
+                    key={mod.id}
+                    onClick={() => {
+                      sound.playButton();
+                      setSelectedModuleId(mod.id);
+                    }}
+                    className={`px-3 py-2 rounded-xl text-left border transition-all ${
+                      isSelected
+                        ? 'bg-emerald-950/70 border-emerald-400 text-emerald-200 shadow-md shadow-emerald-500/10'
+                        : 'bg-slate-800/60 border-slate-700 text-slate-300 hover:bg-slate-800'
+                    }`}
+                  >
+                    <div className="text-xs font-bold font-mono">{mod.title}</div>
+                    <div className="text-[10px] text-slate-400">{mod.filename}</div>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Source Code Viewer */}
+            <div className="flex items-center justify-between pt-2">
+              <span className="text-xs font-mono text-slate-300 flex items-center gap-1.5">
+                <Terminal className="w-3.5 h-3.5 text-cyan-400" /> {activeModule.filename} —{' '}
+                <span className="text-slate-400">{activeModule.subtitle}</span>
+              </span>
+              <button
+                onClick={handleCopy}
+                className="px-3 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-xs font-mono text-emerald-300 flex items-center gap-1.5 border border-emerald-500/40 cursor-pointer"
+              >
+                {copied ? (
+                  <Check className="w-3.5 h-3.5 text-emerald-400" />
+                ) : (
+                  <Copy className="w-3.5 h-3.5" />
+                )}
+                {copied ? 'Copied C++20 Header' : 'Copy C++20 Code'}
+              </button>
+            </div>
+            <pre className="p-4 rounded-xl bg-slate-950 border border-slate-800 text-[11px] font-mono text-emerald-300/95 overflow-x-auto max-h-[380px] leading-relaxed">
+              <code>{activeModule.code}</code>
+            </pre>
+          </div>
+
+          {/* C++20 Features Checklist */}
+          <div className="p-4 rounded-xl bg-slate-800/50 border border-slate-700/80 space-y-2">
+            <h3 className="text-xs font-bold text-emerald-300 uppercase tracking-wider">
+              C++20 Android Open-World Architecture & Cultivation Systems Implemented
+            </h3>
+            <ul className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-slate-300">
+              {CPP_ENGINE_SPEC.features.map((feat, i) => (
+                <li key={i} className="flex items-start gap-2">
+                  <span className="text-emerald-400 font-bold shrink-0">✓</span>
+                  <span>{feat}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {/* Engineering Transparency Matrix: Implemented vs. Simulated vs. Planned */}
+          <div
+            data-testid="engineering-transparency-panel"
+            className="p-4 rounded-xl bg-slate-950/95 border border-cyan-500/40 space-y-3"
+          >
+            <div className="flex items-center justify-between flex-wrap gap-2 border-b border-slate-800 pb-2.5">
+              <div>
+                <h3 className="text-xs font-bold text-cyan-300 uppercase tracking-wider flex items-center gap-2">
+                  <span>
+                    🔍 Engineering Transparency Matrix: Implemented vs. Simulated vs. Planned
+                  </span>
+                </h3>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  Explicit engineering separation between live browser WebGL2/TypeScript execution,
+                  deterministic analytical/metadata models, and planned native engine targets.
+                </p>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap text-[11px] font-mono">
+                <span className="px-2.5 py-0.5 rounded bg-emerald-500/20 border border-emerald-400/50 text-emerald-300 font-bold">
+                  Implemented: {transparencySummary.implementedCount}
+                </span>
+                <span className="px-2.5 py-0.5 rounded bg-amber-500/20 border border-amber-400/50 text-amber-300 font-bold">
+                  Simulated Model: {transparencySummary.simulatedCount}
+                </span>
+                <span className="px-2.5 py-0.5 rounded bg-purple-500/20 border border-purple-400/50 text-purple-300 font-bold">
+                  Planned Native: {transparencySummary.plannedCount}
+                </span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {transparencySummary.entries.map((entry) => {
+                const badgeClass =
+                  entry.status === 'implemented'
+                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                    : entry.status === 'simulated'
+                      ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                      : 'bg-purple-500/20 text-purple-300 border-purple-500/40';
+                return (
+                  <div
+                    key={entry.id}
+                    className="p-3 rounded-xl bg-slate-900/90 border border-slate-800 space-y-1.5"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <span className="text-xs font-bold text-white">{entry.featureName}</span>
+                      <span
+                        className={`px-2 py-0.5 rounded border font-mono text-[9px] font-bold shrink-0 ${badgeClass}`}
+                      >
+                        {entry.statusBadgeLabel}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-300">
+                      <strong className="text-emerald-300">Runs Live in Browser:</strong>{' '}
+                      {entry.whatRunsInBrowserNow}
+                    </p>
+                    <p className="text-[11px] text-slate-400">
+                      <strong className="text-amber-300">Simulated / Modeled:</strong>{' '}
+                      {entry.whatIsSimulatedOrModeled}
+                    </p>
+                    <p className="text-[10px] text-slate-400 font-mono">
+                      <strong className="text-purple-300">Planned Native Target:</strong>{' '}
+                      {entry.plannedNativeTarget}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* 9-Pillar Cross-System Validation & Integrity Audit */}
+          <div
+            data-testid="system-validation-audit-panel"
+            className="p-4 rounded-xl bg-emerald-950/25 border border-emerald-500/40 space-y-3"
+          >
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div>
+                <h3 className="text-xs font-bold text-emerald-300 uppercase tracking-wider flex items-center gap-2">
+                  <span>
+                    🛡️ {validationReport.totalPillars}-Pillar Cross-System Validation &amp;
+                    Integrity Audit ({validationReport.releaseVersion} ·{' '}
+                    {validationReport.releaseDate})
+                  </span>
+                </h3>
+                <p className="text-[11px] text-slate-300">
+                  Supreme Author &amp; Root Governance Authority:{' '}
+                  <span className="font-mono text-amber-300">
+                    {validationReport.supremeAuthorEmail}
+                  </span>
+                </p>
+              </div>
+              <div className="px-3 py-1 rounded-full bg-emerald-500/20 border border-emerald-400/50 text-emerald-200 text-xs font-mono font-bold">
+                {validationReport.passedPillars}/{validationReport.totalPillars} PILLARS PASSING ·{' '}
+                {validationReport.validationScore}% VALIDATED (
+                {validationReport.totalAssertionsPassed} Invariants)
+              </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+              {validationReport.pillars.map((pillar) => (
+                <div
+                  key={pillar.id}
+                  className="p-2.5 rounded-lg bg-slate-900/90 border border-emerald-500/25 space-y-1"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-bold text-white">{pillar.title}</span>
+                    <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-mono text-[10px] font-bold">
+                      {pillar.passed ? 'PASS' : 'FAIL'} ({pillar.assertionsPassed} checks)
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-300">{pillar.summary}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
